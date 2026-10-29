@@ -14,7 +14,9 @@ function make() {
   if (!url) throw new Error('ยังไม่ได้ตั้ง SUPABASE_DB_URL');
   return postgres(url, {
     prepare: false,
-    max: 5,
+    // 1 connection ต่อ instance: บน Supabase pooler การเปิดหลาย connection พร้อมกันค้าง (เจอจริงบน Vercel)
+    // คำสั่งที่ยิงพร้อมกัน (Promise.all) จะต่อคิวใน connection เดียว ยังเร็วเพราะแต่ละคำสั่ง ~2 ms
+    max: 1,
     // serverless: ปิด connection ที่ว่างเร็ว ๆ และไม่ใช้ตัวเก่านานเกิน กันค้างกับ socket ที่ pooler ตัดไปแล้ว
     idle_timeout: 5,
     max_lifetime: 60,

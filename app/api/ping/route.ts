@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     steps.push(await race('catalog', () => getCatalog()));
     steps.push(await race('biz_pet_hotel', () => getBizCatalog('pet_hotel')));
     steps.push(await race('pets_demo', async () => { const m = await me(); return m.code ? getPets(m.code) : null; }));
-    steps.push(await race('parallel_8', () => Promise.all(Array.from({ length: 8 }, () => sql`select pg_sleep(0.05)`))));
+    steps.push(await race('parallel_8', () => Promise.all(Array.from({ length: 8 }, () => sql`select 1`))));
     out.steps = Object.fromEntries(steps);
   }
   out.total_ms = Date.now() - t0;
