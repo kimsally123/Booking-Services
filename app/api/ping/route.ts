@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { sql } from '@/lib/db';
+import { dbPort, sql } from '@/lib/db';
 import { getBizCatalog, getCatalog, getPets } from '@/lib/catalog';
 import { me } from '@/lib/me';
 import { liffId } from '@/lib/config';
@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
   }
   const out: Record<string, unknown> = {
     server_region: process.env.VERCEL_REGION ?? 'local',
+    db_port: dbPort,
     db_first_ms: ms[0],
     db_next_ms: ms.slice(1),
   };
