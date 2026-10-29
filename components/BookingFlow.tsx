@@ -1,17 +1,30 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { BizCatalog, CartItem, Pet, Quote } from '@/lib/types';
-import { addDays, baht, isoDow, thDate, thDay, thRange } from '@/lib/thaidate';
-import { BottomBar, Chip, Photo, Progress, Stepper, Tick, TopBar } from './ui';
+import { addDays, baht, daysBetween, isoDow, thDate, thDay } from '@/lib/thaidate';
+import { BottomBar, Photo, Progress, Stepper, Tick, TopBar } from './ui';
+import Calendar, { type Cell, type Mark } from './Calendar';
+import { BOOK_AHEAD_MONTHS, lastBookable, maxNights } from '@/lib/rules';
 import { clearTrip, loadTrip, saveTrip, type TripEntry } from '@/lib/trip';
 import { bizLook } from '@/lib/look';
 
-type StepKey = 'dates' | 'guests' | 'pets' | 'pet' | 'unit' | 'session' | 'service' | 'addons' | 'slot' | 'summary';
+type StepKey = 'dates' | 'day' | 'guests' | 'pets' | 'pet' | 'unit' | 'session' | 'service' | 'addons' | 'slot' | 'summary';
 type Avail<T> = { loading: boolean; error: string | null; data: T | null };
 type UnitAv = { code: string; free: boolean; reason: string | null };
 type SessAv = { code: string; start: string; end: string; size_rule: string; left: number; capacity: number; free: boolean; reason: string | null };
-type SlotAv = { minutes: number; closed: boolean; slots: { start: string; staff: string; staff_name: string }[] };
+type SlotAv = { minutes: number; closed: boolean; slots: { start: string; staff: string; staff_name: string }[];
+                grid: { start: string; staff: string | null; staff_name: string | null }[] };
+type MonthAv = {
+  today: string; last: string; until: string;
+  days: Record<string, { closed: boolean; reason: string | null }>;
+  units?: { code: string; price: number; weekend_price: number | null; busy: string[]; off: string[] }[];
+  sessions?: Record<string, { open: number; later: number; free: number }>;
+  slots?: Record<string, { free: number; reason: string | null }>;
+};
+// 4500 → 4.5k · 12000 → 12k · 800 → ฿800
+const kBaht = (n: number) => (n >= 1000 ? `${Math.round(n / 100) / 10}k` : baht(n));
+const weekendNight = (d: string) => { const w = isoDow(d); return w === 5 || w === 6; };
 
 const SIZE_TH: Record<string, string> = { small: 'น้องเล็ก ≤ 10 กก.', large: 'น้องใหญ่ 10 กก.+', all: 'ทุกขนาด' };
 
@@ -44,24 +57,30 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
 
   const steps: StepKey[] = b.booking_type === 'stay'
     ? (forPeople ? ['dates', 'guests', 'unit', 'summary'] : ['dates', 'pets', 'unit', 'summary'])
-    : b.booking_type === 'session' ? ['pets', 'session', 'summary']
+    : b.booking_type === 'session' ? ['day', 'pets', 'session', 'summary']
     : ['pet', 'service', 'addons', 'slot', 'summary'];
 
   const [i, setI] = useState(0);
   const step = steps[i];
-  const start = initial?.date && /^\d{4}-\d{2}-\d{2}$/.test(initial.date) && initial.date >= today ? initial.date : today;
-  const [from, setFrom] = useState(start);
-  const [nights, setNights] = useState(1);
-  const to = addDays(from, nights);
+  const lastDay = lastBookable(today);
+  const start = initial?.date && /^\d{4}-\d{2}-\d{2}$/.test(initial.date) && initial.date >= today && initial.date <= lastDay ? initial.date : null;
+  const [from, setFrom] = useState<string | null>(b.booking_type === 'stay' ? start : null);
+  const [to, setTo] = useState<string | null>(null);
+  const nights = from && to ? daysBetween(from, to) : 0;
+  const maxN = maxNights(forPeople);
+  const word = forPeople ? 'หลัง' : 'ห้อง';
+  const inWord = forPeople ? 'เข้าพัก' : 'เช็กอิน', outWord = forPeople ? 'เช็กเอาต์' : 'รับกลับ';
   const [guests, setGuests] = useState(2);
   const [sel, setSel] = useState<string[]>([]);            // น้องที่เลือก
   const [unit, setUnit] = useState<string | null>(null);
-  const [date, setDate] = useState(start);
+  const [date, setDate] = useState<string | null>(b.booking_type === 'stay' ? null : start);
   const [session, setSession] = useState<string | null>(null);
   const [service, setService] = useState<string | null>(initial?.service && mains.some((m) => m.code === initial.service) ? initial.service : null);
   const [addons, setAddons] = useState<string[]>([]);
   const [slot, setSlot] = useState<{ start: string; staff: string; staff_name: string } | null>(null);
-  const [toast] = useState('');
+  const [toast, setToast] = useState('');
+  const toastT = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const flash = (m: string) => { setToast(m); clearTimeout(toastT.current); toastT.current = setTimeout(() => setToast(''), 2400); };
   const [accept, setAccept] = useState(false);
   const [busy, setBusy] = useState(false);
   const [orderErr, setOrderErr] = useState('');
@@ -71,25 +90,93 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
   const chosenPets = pets.filter((p) => sel.includes(p.code));
   const pet = chosenPets[0] ?? null;
   const vaxOk = (p: Pet, on: string) => !b.need_vaccine || (!!p.vaccine_until && p.vaccine_until >= on);
-  const serviceDate = b.booking_type === 'stay' ? from : date;
-  const days = useMemo(() => Array.from({ length: 14 }, (_, k) => addDays(today, k)), [today]);
-  const closedOn = (d: string, unitCode?: string | null) =>
-    cat.closures.some((c) => d >= c.date_from && d <= c.date_to && !c.session_code && (!c.unit_code || c.unit_code === unitCode));
+  const serviceDate = (b.booking_type === 'stay' ? from : date) ?? today;
 
   // ---------- ที่ว่างจาก server ----------
   const maxKg = chosenPets.length ? Math.max(...chosenPets.map((p) => Number(p.weight_kg))) : 0;
-  const unitAv = useFetch<{ units: UnitAv[] }>(step === 'unit'
+  const month = useFetch<MonthAv>(b.booking_type !== 'slot' ? `/api/availability?type=month&biz=${b.code}`
+    : step === 'slot' && service ? `/api/availability?type=month&biz=${b.code}&service=${service}&addons=${addons.join(',')}&tier=${pet?.tier_code ?? ''}` : null);
+  const M = month.data;
+  const unitAv = useFetch<{ units: UnitAv[] }>(step === 'unit' && from && to
     ? `/api/availability?type=stay&biz=${b.code}&from=${from}&to=${to}&pets=${sel.length}${forPeople ? `&guests=${guests}` : ''}${maxKg ? `&maxkg=${maxKg}` : ''}`
     : null);
-  const sessAv = useFetch<{ sessions: SessAv[] }>(step === 'session'
+  const sessAv = useFetch<{ sessions: SessAv[] }>(step === 'session' && date
     ? `/api/availability?type=session&biz=${b.code}&date=${date}&kg=${chosenPets.map((p) => p.weight_kg).join(',')}` : null);
-  const slotAv = useFetch<SlotAv>(step === 'slot' && service
+  const slotAv = useFetch<SlotAv>(step === 'slot' && service && date
     ? `/api/availability?type=slot&biz=${b.code}&date=${date}&service=${service}&addons=${addons.join(',')}&tier=${pet?.tier_code ?? ''}` : null);
 
+  // ---------- ปฏิทิน ----------
+  const unitSets = useMemo(() => (M?.units ?? []).map((u) => ({ ...u, B: new Set([...u.busy, ...u.off]) })), [M]);
+  const nightPrice = (u: { price: number; weekend_price: number | null }, d: string) =>
+    weekendNight(d) && u.weekend_price !== null ? Number(u.weekend_price) : Number(u.price);
+  const freeRange = (a: string, z: string) => unitSets.filter((u) => {
+    for (let d = a; d < z; d = addDays(d, 1)) if (u.B.has(d)) return false;
+    return true;
+  });
+  const busyNights = (code: string, a: string, z: string) => {
+    const u = unitSets.find((x) => x.code === code); const out: string[] = [];
+    if (u) for (let d = a; d < z; d = addDays(d, 1)) if (u.B.has(d)) out.push(d);
+    return out;
+  };
+  const base = (d: string): Cell | null => {
+    if (!M) return { kind: 'off', pick: false, reason: month.error || 'กำลังโหลดปฏิทิน…' };
+    if (d < M.today) return { kind: 'off', pick: false, reason: 'วันที่ผ่านไปแล้ว' };
+    if (M.days[d]?.closed) return { kind: 'off', pick: false, reason: M.days[d].reason ?? 'ร้านปิด' };
+    if (d > M.last) return { kind: 'off', pick: false, reason: `จองล่วงหน้าได้ไม่เกิน ${BOOK_AHEAD_MONTHS} เดือน` };
+    return null;
+  };
+  const nightCell = (d: string): Cell => {
+    const f = unitSets.filter((u) => !u.B.has(d));
+    if (!f.length) return { kind: 'full', sub: 'เต็ม', pick: false, reason: `${word}เต็มคืนนี้` };
+    return { kind: 'free', sub: forPeople ? kBaht(Math.min(...f.map((u) => nightPrice(u, d)))) : `ว่าง ${f.length}`, pick: true };
+  };
+  const stayCell = (d: string): Cell => {
+    if (from && !to && d > from) {                       // กำลังเลือกวันออก
+      if (!M) return base(d)!;
+      if (M.days[d]?.closed) return { kind: 'off', pick: false, reason: `${M.days[d].reason} · ${outWord}วันนี้ไม่ได้` };
+      const c = d <= M.until && unitSets.some((u) => !u.B.has(d)) ? nightCell(d) : { kind: 'full' as const, sub: 'เต็ม', pick: true };
+      if (daysBetween(from, d) > maxN) return { ...c, pick: false, reason: `พักได้สูงสุด ${maxN} คืน` };
+      if (!freeRange(from, d).length) return { ...c, pick: false, reason: `ไม่มี${word}ว่างตลอดช่วงนี้ · ลองลดจำนวนคืน` };
+      return { ...c, pick: true };                       // วันออกเป็นวันที่เต็มได้ (ไม่ได้ค้างคืนนั้น)
+    }
+    return base(d) ?? nightCell(d);
+  };
+  const stayMark = (d: string): Mark => (d === from ? (to ? 'start' : 'one') : d === to ? 'end' : from && to && d > from && d < to ? 'in' : null);
+  const pickStay = (d: string) => {
+    if (from && !to && d > from) setTo(d); else { setFrom(d); setTo(null); }
+    setUnit(null);
+  };
+  const dayCell = (d: string): Cell => {
+    const x = base(d); if (x) return x;
+    if (b.booking_type === 'session') {
+      const s = M?.sessions?.[d];
+      if (!s || !s.open) return { kind: 'off', pick: false, reason: 'ไม่มีรอบวันนี้' };
+      if (!s.later) return { kind: 'off', pick: false, reason: 'วันนี้หมดรอบแล้ว' };
+      if (!s.free) return { kind: 'full', sub: 'เต็ม', pick: false, reason: 'รอบเต็มทุกรอบแล้ววันนี้' };
+      return { kind: 'free', sub: `${s.free} รอบ`, pick: true };
+    }
+    const s = M?.slots?.[d];
+    if (!s) return { kind: 'off', pick: false, reason: 'ร้านปิด' };
+    if (!s.free) return { kind: /เลยเวลา/.test(s.reason ?? '') ? 'off' : 'full', sub: 'เต็ม', pick: false, reason: s.reason ?? 'คิวเต็ม' };
+    return { kind: 'free', sub: `${s.free} เวลา`, pick: true };
+  };
+  const stayTotal = (u: { price: number; weekend_price: number | null; pet_fee?: number | null }) => {
+    if (!from || !to) return 0;
+    let t = 0;
+    for (let d = from; d < to; d = addDays(d, 1)) t += nightPrice(u, d);
+    return t + (u.pet_fee ? Number(u.pet_fee) * sel.length * nights : 0);
+  };
+  const calendar = (cell: (d: string) => Cell, mark: (d: string) => Mark, onPick: (d: string) => void, focus: string | null) => (
+    <>
+      {month.error && <div className="err">{month.error}</div>}
+      <Calendar today={today} until={M?.until ?? addDays(today, 60)} focus={focus} cell={cell} mark={mark} onPick={onPick} onBlocked={flash} />
+    </>
+  );
+
   const cart: CartItem | null = useMemo(() => {
-    if (b.booking_type === 'stay' && unit) return { business: b.code, kind: 'stay', unit, from, to, pets: sel, guests: forPeople ? guests : undefined };
-    if (b.booking_type === 'session' && session) return { business: b.code, kind: 'session', session, date, pets: sel };
-    if (b.booking_type === 'slot' && service && slot && pet) return { business: b.code, kind: 'slot', service, addons, staff: slot.staff, start: `${date}T${slot.start}`, pet: pet.code };
+    if (b.booking_type === 'stay' && unit && from && to) return { business: b.code, kind: 'stay', unit, from, to, pets: sel, guests: forPeople ? guests : undefined };
+    if (b.booking_type === 'session' && session && date) return { business: b.code, kind: 'session', session, date, pets: sel };
+    if (b.booking_type === 'slot' && service && slot && pet && date) return { business: b.code, kind: 'slot', service, addons, staff: slot.staff, start: `${date}T${slot.start}`, pet: pet.code };
     return null;
   }, [b, unit, from, to, sel, guests, forPeople, session, date, service, slot, pet, addons]);
   const allItems = cart ? [...trip.map((t) => t.item), cart] : [];
@@ -98,13 +185,15 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
   // ---------- ราคาประมาณ (ระหว่างเลือก) ----------
   const estimate = (() => {
     if (b.booking_type === 'stay') {
-      const u = cat.units.find((x) => x.code === unit) ?? null;
-      const base = u ? Number(u.price) : Math.min(...cat.units.map((x) => Number(x.price)));
-      const fee = u?.pet_fee ? Number(u.pet_fee) * sel.length : 0;
-      return (base + fee) * nights;
+      if (!from || !to) return null;                     // ยังเลือกวันไม่ครบ = "—"
+      const u = cat.units.find((x) => x.code === unit);
+      if (u) return stayTotal({ price: Number(u.price), weekend_price: u.weekend_price === null ? null : Number(u.weekend_price), pet_fee: u.pet_fee });
+      const free = freeRange(from, to).map((x) => stayTotal(x));
+      return free.length ? Math.min(...free) : null;
     }
     if (b.booking_type === 'session') {
       const s = cat.sessions.find((x) => x.code === session) ?? cat.sessions[0];
+      if (!date) return null;
       return s ? Number(s.price) * Math.max(1, sel.length) : 0;
     }
     const s = mains.find((x) => x.code === service);
@@ -113,13 +202,19 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
   })();
 
   const note = (() => {
-    if (b.booking_type === 'stay') return `${thRange(from, to)} · ${nights} คืน${sel.length ? ` · น้อง ${sel.length}` : ''}`;
-    if (b.booking_type === 'session') return `${thDate(date)}${sel.length ? ` · ${sel.length} ตัว` : ''}`;
-    return `${thDate(date)}${slot ? ' · ' + slot.start : ''}`;
+    if (b.booking_type === 'stay') {
+      if (!from) return `เลือกวัน${inWord}`;
+      if (!to) return `เลือกวัน${outWord}`;
+      return `${thDate(from)} – ${thDate(to)} · ${nights} คืน${sel.length ? ` · น้อง ${sel.length}` : ''}`;
+    }
+    if (b.booking_type === 'session') return date ? `${thDate(date)}${sel.length ? ` · ${sel.length} ตัว` : ''}` : 'เลือกวัน';
+    if (step === 'slot' || date) return date ? `${thDate(date)}${slot ? ' · ' + slot.start : ' · เลือกเวลา'}` : 'เลือกวันและเวลา';
+    return pet ? pet.name : 'เลือกน้อง';
   })();
 
   const valid: Record<StepKey, boolean> = {
-    dates: nights >= 1 && !closedOn(from),
+    dates: nights >= 1 && nights <= maxN,
+    day: !!date,
     guests: guests >= 1,
     pets: b.booking_type === 'stay' ? sel.length > 0 : sel.length > 0,
     pet: sel.length === 1,
@@ -127,7 +222,7 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
     session: !!session,
     service: !!service,
     addons: true,
-    slot: !!slot,
+    slot: !!date && !!slot,
     summary: !!q.data && accept,
   };
 
@@ -138,8 +233,8 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
     window.scrollTo(0, 0);
   };
   // ขายข้ามธุรกิจ: เก็บรายการนี้ไว้ในทริป แล้วไปเลือกบริการถัดไป (จ่ายรวม QR เดียว)
-  const offerDate = (rule: string) => b.booking_type !== 'stay' ? date
-    : rule === 'checkout_day' ? to : nights > 1 ? addDays(from, 1) : from;
+  const offerDate = (rule: string) => (b.booking_type !== 'stay' ? date
+    : rule === 'checkout_day' ? to : from && nights > 1 ? addDays(from, 1) : from) ?? today;
   const addOffer = (x: BizCatalog['cross_sells'][number]) => {
     if (!cart || !q.data) return;
     const qi = q.data.items[q.data.items.length - 1];
@@ -198,19 +293,22 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
   let content: React.ReactNode = null;
   if (step === 'dates') content = (
     <>
-      <div className="h1">{forPeople ? 'เข้าพักวันไหน' : 'ฝากวันไหน'}</div>
-      <div className="sub">เช็กอิน {b.checkin_time || '14:00'} · เช็กเอาต์ {b.checkout_time || '12:00'}</div>
-      <div className="chips">
-        {days.map((d, k) => <Chip key={d} on={from === d} disabled={closedOn(d)} title={thDate(d, false)} sub={k === 0 ? 'วันนี้' : k === 1 ? 'พรุ่งนี้' : thDate(d).split(' ')[2]} onClick={() => { setFrom(d); setUnit(null); }} />)}
+      <div className="h1">{forPeople ? 'เข้าพักวันไหน' : 'พักวันไหน'}</div>
+      <div className="sub">แตะวัน{inWord} แล้วแตะวัน{outWord} · เช็กอิน {b.checkin_time || '14:00'} · เช็กเอาต์ {b.checkout_time || '12:00'}</div>
+      <div className="rangebox">
+        <div className={!from || to ? 'on' : ''}><small>{inWord}</small><b>{from ? thDate(from) : '—'}</b></div>
+        <div className={from && !to ? 'on' : ''}><small>{outWord}</small><b>{to ? thDate(to) : '—'}</b></div>
+        <div><small>จำนวน</small><b className="num">{nights ? `${nights} คืน` : '—'}</b></div>
       </div>
-      <label className="sub" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        วันอื่น <input type="date" min={today} value={from} onChange={(e) => e.target.value && (setFrom(e.target.value), setUnit(null))} />
-      </label>
-      <div className="section">{forPeople ? 'วันออก' : 'รับกลับวันไหน'}</div>
-      <div className="grid2">
-        {[1, 2, 3, 4, 5, 6, 7].map((n) => <Chip key={n} on={nights === n} title={thDate(addDays(from, n), false)} sub={`${n} คืน`} onClick={() => { setNights(n); setUnit(null); }} />)}
-      </div>
-      {closedOn(from) && <div className="err">วันที่เลือกร้านปิด</div>}
+      {calendar(stayCell, stayMark, pickStay, from)}
+      <div className="sub" style={{ fontSize: 13 }}>{forPeople ? 'ใต้วันที่คือราคาเริ่มต้นต่อคืน' : 'ใต้วันที่คือจำนวนห้องที่ว่างคืนนั้น'} · พักได้สูงสุด {maxN} คืน</div>
+    </>
+  );
+  if (step === 'day') content = (
+    <>
+      <div className="h1">วันไหน</div>
+      <div className="sub">ใต้วันที่คือจำนวนรอบที่ยังมีที่ว่าง</div>
+      {calendar(dayCell, (d) => (d === date ? 'one' : null), (d) => { setDate(d); setSession(null); }, date)}
     </>
   );
   if (step === 'guests') content = (
@@ -229,49 +327,56 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
       {petCards(false)}</>
   );
   if (step === 'pet') content = <><div className="h1">น้องตัวไหน</div>{petCards(true)}</>;
-  if (step === 'unit') content = (
-    <>
-      <div className="h1">{forPeople ? 'เลือกบ้าน' : 'เลือกห้อง'}</div>
-      <div className="sub">{thRange(from, to)} · {nights} คืน</div>
-      {unitAv.loading && <><div className="skeleton" style={{ height: 220 }} /><div className="skeleton" style={{ height: 220 }} /></>}
-      {unitAv.error && <div className="err">{unitAv.error}</div>}
-      {unitAv.data && cat.units.map((u) => {
-        const av = unitAv.data!.units.find((x) => x.code === u.code);
-        return (
-          <button key={u.code} className={'unit' + (unit === u.code ? ' on' : '')} disabled={!av?.free} onClick={() => setUnit(u.code)}>
-            <Photo file={u.photos[0]?.file} />
-            <div className="row">
-              <span className="t">
-                <b>{u.name}</b>
-                <small>{u.summary}</small>
-                {!av?.free && <small style={{ color: 'var(--red-ink)' }}>{av?.reason}</small>}
-                {u.pet_fee && sel.length > 0 ? <small>ค่าน้อง {baht(Number(u.pet_fee))}/ตัว/คืน</small> : null}
-              </span>
-              <span className="p num">{baht(Number(u.price))}<small>/คืน</small></span>
-            </div>
-          </button>
-        );
-      })}
-    </>
-  );
-  if (step === 'session') {
-    const open = cat.sessions.filter((s) => s.weekdays.includes(isoDow(date)));
+  if (step === 'unit' && from && to) {
+    const freeCodes = new Set(freeRange(from, to).map((u) => u.code));
+    const isFree = (code: string) => freeCodes.has(code) && !!unitAv.data?.units.find((x) => x.code === code)?.free;
+    const list = [...cat.units].sort((x, y) => Number(isFree(y.code)) - Number(isFree(x.code)))
+      .filter((u) => !forPeople || isFree(u.code));
+    const nFree = cat.units.filter((u) => isFree(u.code)).length;
     content = (
       <>
-        <div className="h1">เลือกวันและรอบ</div>
-        <div className="chips">
-          {days.map((d, k) => <Chip key={d} on={date === d} title={thDate(d, false)} sub={k === 0 ? 'วันนี้' : k === 1 ? 'พรุ่งนี้' : thDate(d).split(' ')[2]} onClick={() => { setDate(d); setSession(null); }} />)}
-        </div>
-        <label className="sub" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          วันอื่น <input type="date" min={today} value={date} onChange={(e) => e.target.value && (setDate(e.target.value), setSession(null))} />
-        </label>
+        <div className="h1">{forPeople ? 'หลังที่ว่าง' : 'ห้องที่ว่าง'}</div>
+        <div className="sub">{thDate(from)} – {thDate(to)} · {nights} คืน{unitAv.data ? ` · ว่าง ${nFree} จาก ${cat.units.length} ${word}` : ''}</div>
+        {unitAv.loading && <><div className="skeleton" style={{ height: 220 }} /><div className="skeleton" style={{ height: 220 }} /></>}
+        {unitAv.error && <div className="err">{unitAv.error}</div>}
+        {unitAv.data && !nFree && <div className="warn"><span className="ms">info</span>ไม่มี{word}ว่างตลอดช่วงนี้ · ลองเปลี่ยนวัน</div>}
+        {unitAv.data && list.map((u) => {
+          const av = unitAv.data!.units.find((x) => x.code === u.code);
+          const ok = isFree(u.code);
+          const busy = busyNights(u.code, from, to);
+          const why = ok ? null : busy.length ? `ไม่ว่างคืน ${busy.slice(0, 3).map((d) => thDate(d)).join(', ')}${busy.length > 3 ? ` และอีก ${busy.length - 3} คืน` : ''}` : av?.reason;
+          const total = stayTotal({ price: Number(u.price), weekend_price: u.weekend_price === null ? null : Number(u.weekend_price), pet_fee: u.pet_fee });
+          return (
+            <button key={u.code} className={'unit' + (unit === u.code ? ' on' : '')} disabled={!ok} onClick={() => setUnit(u.code)}>
+              <Photo file={u.photos[0]?.file} />
+              <div className="row">
+                <span className="t">
+                  <b>{u.name}</b>
+                  <small>{u.summary}</small>
+                  {why && <small style={{ color: 'var(--red-ink)' }}>{why}</small>}
+                  {u.pet_fee && sel.length > 0 ? <small>รวมค่าน้อง {baht(Number(u.pet_fee))}/ตัว/คืน</small> : null}
+                </span>
+                <span className="p num">{baht(total)}<small>รวม {nights} คืน</small></span>
+              </div>
+            </button>
+          );
+        })}
+      </>
+    );
+  }
+  if (step === 'session' && date) {
+    const open = cat.sessions.filter((x) => x.weekdays.includes(isoDow(date)));
+    content = (
+      <>
+        <div className="h1">เลือกรอบ · {thDate(date)}</div>
+        <div className="sub">ที่ว่างของวันนี้ · เปลี่ยนวันได้ที่ปุ่มย้อนกลับ</div>
         {sessAv.loading && <div className="skeleton" />}
         {sessAv.error && <div className="err">{sessAv.error}</div>}
         {sessAv.data && !open.length && <div className="warn"><span className="ms">info</span>วันนี้ไม่มีรอบ</div>}
-        {sessAv.data?.sessions.map((s) => (
-          <button key={s.code} className={'card' + (session === s.code ? ' on' : '')} disabled={!s.free} onClick={() => setSession(s.code)}>
-            <span className="t"><b className="num">{s.start}–{s.end}</b><small>{SIZE_TH[s.size_rule]}</small></span>
-            <span className="p num" style={{ fontSize: 14 }}>{s.free ? `เหลือ ${s.left} ที่` : s.reason}</span>
+        {sessAv.data?.sessions.map((x) => (
+          <button key={x.code} className={'card' + (session === x.code ? ' on' : '')} disabled={!x.free} onClick={() => setSession(x.code)}>
+            <span className="t"><b className="num">{x.start}–{x.end}</b><small>{SIZE_TH[x.size_rule]}</small></span>
+            <span className="p num" style={{ fontSize: 14 }}>{x.free ? `เหลือ ${x.left} ที่` : x.reason}</span>
           </button>
         ))}
       </>
@@ -308,20 +413,29 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
   );
   if (step === 'slot') content = (
     <>
-      <div className="h1">เวลา · {thDate(date)}</div>
-      <div className="chips">
-        {days.map((d, k) => <Chip key={d} on={date === d} title={thDate(d, false)} sub={k === 0 ? 'วันนี้' : k === 1 ? 'พรุ่งนี้' : thDate(d).split(' ')[2]} onClick={() => { setDate(d); setSlot(null); }} />)}
-      </div>
-      <label className="sub" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        วันอื่น <input type="date" min={today} value={date} onChange={(e) => e.target.value && (setDate(e.target.value), setSlot(null))} />
-      </label>
-      {slotAv.loading && <div className="skeleton" />}
-      {slotAv.error && <div className="err">{slotAv.error}</div>}
-      {slotAv.data && <div className="sub">ใช้เวลาประมาณ {slotAv.data.minutes} นาที</div>}
-      {slotAv.data && (slotAv.data.closed || !slotAv.data.slots.length) && <div className="warn"><span className="ms">info</span>{slotAv.data.closed ? 'ร้านปิดวันนี้' : 'วันนี้คิวเต็ม ลองวันอื่น'}</div>}
-      <div className="grid2">
-        {slotAv.data?.slots.map((s) => <Chip key={s.start} on={slot?.start === s.start} title={s.start} sub={'พี่' + s.staff_name} onClick={() => setSlot(s)} />)}
-      </div>
+      <div className="h1">วันและเวลา</div>
+      <div className="sub">เลือกวันจากปฏิทิน แล้วเลือกเวลาด้านล่าง</div>
+      {calendar(dayCell, (d) => (d === date ? 'one' : null), (d) => { setDate(d); setSlot(null); }, date)}
+      {date && (
+        <>
+          <div className="section">เวลา · {thDate(date)}</div>
+          {slotAv.loading && <div className="skeleton" />}
+          {slotAv.error && <div className="err">{slotAv.error}</div>}
+          {slotAv.data && <div className="sub">ใช้เวลาประมาณ {slotAv.data.minutes} นาที</div>}
+          {slotAv.data && (slotAv.data.closed || !slotAv.data.slots.length) && <div className="warn"><span className="ms">info</span>{slotAv.data.closed ? 'ร้านปิดวันนี้' : 'วันนี้คิวเต็ม ลองวันอื่น'}</div>}
+          <div className="times">
+            {slotAv.data?.grid.map((x) => {
+              const free = x.staff && x.staff_name ? { start: x.start, staff: x.staff, staff_name: x.staff_name } : null;
+              return (
+                <button key={x.start} className={'chip' + (slot?.start === x.start ? ' on' : '') + (free ? '' : ' full')} disabled={!free}
+                  onClick={() => free && setSlot(free)}>
+                  <b className="num">{x.start}</b><small>{free ? 'พี่' + free.staff_name : 'เต็ม'}</small>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
     </>
   );
   if (step === 'summary') content = (
@@ -393,7 +507,7 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
       </div>
       <BottomBar
         note={last ? 'จ่ายวันนี้' : note}
-        amount={baht(last && q.data ? q.data.due_now : estimate)}
+        amount={last ? (q.data ? baht(q.data.due_now) : '—') : estimate === null ? '—' : baht(estimate)}
         label={last ? 'ชำระเงิน' : step === 'addons' && !addons.length ? 'ข้าม' : 'ต่อไป'}
         red={last}
         disabled={!valid[step]}

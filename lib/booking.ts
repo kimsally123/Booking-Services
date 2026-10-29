@@ -1,6 +1,7 @@
 import 'server-only';
 import { sql } from './db';
 import type { Business, CartItem, Pet, Quote, QuoteItem, QuoteLine } from './types';
+import { BOOK_AHEAD_MONTHS, lastBookable, maxNights } from './rules';
 import { addDays, baht, daysBetween, firstTime, fromMin, isoDow, thDate, thRange, toMin, todayTH } from './thaidate';
 
 // เวลาไทย → timestamptz
@@ -116,38 +117,70 @@ async function groomDuration(bizCode: string, service: string, addons: string[],
   };
 }
 
+// ช่างทำขนที่รับธุรกิจนี้ (วันทำงาน · เวลา · โควตาคิวต่อวัน)
+export type Groomer = { code: string; display_name: string; ws: string; we: string; work_days: number[]; quota: number };
+export async function groomers(bizCode: string): Promise<Groomer[]> {
+  const rows = await sql`
+    select code, display_name, to_char(work_start, 'HH24:MI') as ws, to_char(work_end, 'HH24:MI') as we,
+           work_days, daily_quota as quota
+    from staff where is_groomer and invite_status <> 'removed'
+      and (${bizCode} = any (businesses) or 'all' = any (businesses))
+    order by code`;
+  return rows.map((r) => ({ code: r.code, display_name: r.display_name, ws: r.ws, we: r.we,
+                            work_days: (r.work_days as number[]).map(Number), quota: Number(r.quota) }));
+}
+
+// เวลาเริ่มที่ช่างคนนี้รับได้ (ทุก 30 นาที · ไม่ชนคิวเดิม · ไม่ก่อนเวลาที่จองทันวันนี้)
+export function groomerStarts(g: Groomer, busy: [number, number][], total: number, nowMin: number, includeBusy = false): number[] {
+  const out: number[] = [];
+  for (let m = toMin(g.ws); m + total <= toMin(g.we); m += SLOT_STEP) {
+    if (m < nowMin) continue;
+    if (!includeBusy && busy.some(([a, z]) => m < z && a < m + total)) continue;
+    out.push(m);
+  }
+  return out;
+}
+export const leadNow = (date: string) =>
+  date === todayTH() ? toMin(new Date(Date.now() + 7 * 3600000).toISOString().slice(11, 16)) + LEAD_MIN : -1;
+
+export async function groomMinutes(bizCode: string, service: string, addons: string[], tier: string | null) {
+  const d = await groomDuration(bizCode, service, addons, tier);
+  return d.mins + d.addons.reduce((a, x) => a + x.mins, 0);
+}
+
 export async function slotAvailability(bizCode: string, date: string, service: string, addons: string[], tier: string | null) {
   const b = await business(bizCode);
   if (b.booking_type !== 'slot') throw new BookingError('wrong_type', 'ธุรกิจนี้ไม่ใช่การจองแบบช่องเวลา');
-  const d = await groomDuration(bizCode, service, addons, tier);
-  const total = d.mins + d.addons.reduce((a, x) => a + x.mins, 0);
+  const total = await groomMinutes(bizCode, service, addons, tier);
+  type Slot = { start: string; staff: string; staff_name: string };
   const [{ closed }] = await sql`select is_closed(${bizCode}, null, null, ${date}::date) as closed`;
-  if (closed) return { minutes: total, slots: [] as { start: string; staff: string; staff_name: string }[], closed: true };
+  if (closed) return { minutes: total, slots: [] as Slot[], grid: [] as { start: string; staff: string | null; staff_name: string | null }[], closed: true };
 
-  const staff = await sql`
-    select code, display_name, to_char(work_start, 'HH24:MI') as ws, to_char(work_end, 'HH24:MI') as we,
-      coalesce((select json_agg(json_build_array(to_char(k.start_at at time zone 'Asia/Bangkok', 'HH24:MI'),
-                                                  to_char(k.end_at at time zone 'Asia/Bangkok', 'HH24:MI')))
-                from bookings k where k.staff_code = st.code and k.kind = 'slot' and k.status in ${sql(ACTIVE)}
-                  and (k.start_at at time zone 'Asia/Bangkok')::date = ${date}::date), '[]') as busy
-    from staff st
-    where is_groomer and invite_status <> 'removed' and ${isoDow(date)} = any (work_days)
-      and (${bizCode} = any (businesses) or 'all' = any (businesses))
-    order by code`;
-
-  const nowMin = date === todayTH() ? toMin(new Date(Date.now() + 7 * 3600000).toISOString().slice(11, 16)) + LEAD_MIN : -1;
-  const byTime = new Map<string, { start: string; staff: string; staff_name: string }>();
-  for (const st of staff) {
-    const busy = (st.busy as [string, string][]).map(([a, z]) => [toMin(a), toMin(z)]);
-    for (let m = toMin(st.ws); m + total <= toMin(st.we); m += SLOT_STEP) {
-      if (m < nowMin) continue;
-      if (busy.some(([a, z]) => m < z && a < m + total)) continue;
+  const dow = isoDow(date);
+  const working = (await groomers(bizCode)).filter((g) => g.work_days.includes(dow));
+  const bk = working.length ? await sql`
+    select staff_code, to_char(start_at at time zone 'Asia/Bangkok', 'HH24:MI') as a, to_char(end_at at time zone 'Asia/Bangkok', 'HH24:MI') as z
+    from bookings where kind = 'slot' and status in ${sql(ACTIVE)} and staff_code in ${sql(working.map((g) => g.code))}
+      and (start_at at time zone 'Asia/Bangkok')::date = ${date}::date` : [];
+  const nowMin = leadNow(date);
+  const byTime = new Map<string, Slot>();
+  const all = new Set<number>();
+  for (const g of working) {
+    const mine = bk.filter((x) => x.staff_code === g.code);
+    groomerStarts(g, [], total, nowMin, true).forEach((m) => all.add(m));
+    if (mine.length >= g.quota) continue;                 // ครบโควตาวันนี้
+    const busy = mine.map((x) => [toMin(x.a), toMin(x.z)] as [number, number]);
+    for (const m of groomerStarts(g, busy, total, nowMin)) {
       const k = fromMin(m);
-      if (!byTime.has(k)) byTime.set(k, { start: k, staff: st.code, staff_name: st.display_name });
+      if (!byTime.has(k)) byTime.set(k, { start: k, staff: g.code, staff_name: g.display_name });
     }
   }
   const slots = [...byTime.values()].sort((a, z) => a.start.localeCompare(z.start));
-  return { minutes: total, slots, closed: false };
+  const grid = [...all].sort((a, z) => a - z).map((m) => {
+    const s = byTime.get(fromMin(m));
+    return { start: fromMin(m), staff: s?.staff ?? null, staff_name: s?.staff_name ?? null };
+  });
+  return { minutes: total, slots, grid, closed: false };
 }
 
 // ---------- คิดราคา (server เป็นคนคิดเสมอ หน้าจอแค่แสดง) ----------
@@ -157,6 +190,7 @@ export async function quote(customer: string, items: CartItem[]): Promise<Quote>
   for (const it of items) {
     const b = await business(it.business);
     if (b.booking_type !== it.kind) throw new BookingError('wrong_type', 'ชนิดการจองไม่ตรงธุรกิจ');
+    await withinWindow(b, it);
     let title = '', when = '', price = 0, start_at = '', end_at = '';
     const lines: QuoteLine[] = [];
 
@@ -229,8 +263,26 @@ async function slotFreeFor(staff: string, date: string, time: string, minutes: n
     select not exists (select 1 from bookings k where k.staff_code = ${staff} and k.kind = 'slot' and k.status in ${sql(ACTIVE)}
       and tstzrange(k.start_at, k.end_at, '[)') && tstzrange(${at(date, time)}::timestamptz,
                                                           ${at(date, time)}::timestamptz + make_interval(mins => ${minutes}), '[)')) as ok,
-      exists (select 1 from staff where code = ${staff} and is_groomer and ${isoDow(date)} = any (work_days)) as works`;
-  return r.ok && r.works;
+      exists (select 1 from staff where code = ${staff} and is_groomer and ${isoDow(date)} = any (work_days)) as works,
+      (select count(*) from bookings k where k.staff_code = ${staff} and k.kind = 'slot' and k.status in ${sql(ACTIVE)}
+        and (k.start_at at time zone 'Asia/Bangkok')::date = ${date}::date)
+        < (select daily_quota from staff where code = ${staff}) as quota_ok`;
+  return r.ok && r.works && r.quota_ok;
+}
+
+// จองได้ตั้งแต่วันนี้ถึงล่วงหน้า 2 เดือน · พักไม่เกินจำนวนคืนที่กำหนด · วันเข้า/ออกต้องไม่ใช่วันร้านปิด
+async function withinWindow(b: Business, it: CartItem) {
+  const today = todayTH(), last = lastBookable(today);
+  const first = it.kind === 'stay' ? it.from : it.kind === 'session' ? it.date : it.start.slice(0, 10);
+  if (first < today) throw new BookingError('date_past', 'วันที่เลือกผ่านไปแล้ว');
+  if (first > last) throw new BookingError('date_too_far', `จองล่วงหน้าได้ไม่เกิน ${BOOK_AHEAD_MONTHS} เดือน`);
+  if (it.kind !== 'stay') return;
+  const [{ people }] = await sql`select exists (select 1 from units where business_code = ${b.code} and active and max_people is not null) as people`;
+  const max = maxNights(people);
+  if (daysBetween(it.from, it.to) > max) throw new BookingError('too_long', `พักได้สูงสุด ${max} คืน`);
+  const [c] = await sql`select is_closed(${b.code}, null, null, ${it.from}::date) as a, is_closed(${b.code}, null, null, ${it.to}::date) as z`;
+  if (c.a) throw new BookingError('closed_day', 'วันเช็กอินร้านปิด');
+  if (c.z) throw new BookingError('closed_day', 'วันรับกลับ/เช็กเอาต์ร้านปิด');
 }
 
 export { baht };

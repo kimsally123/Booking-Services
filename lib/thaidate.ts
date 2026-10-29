@@ -54,3 +54,22 @@ export function firstTime(s: string | null | undefined, fallback: string): strin
 }
 export const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 export const fromMin = (n: number) => `${String(Math.floor(n / 60)).padStart(2, '0')}:${String(n % 60).padStart(2, '0')}`;
+
+// เลื่อนเดือน (วันเกินสิ้นเดือน → สิ้นเดือน) · 2026-11-30 + 3 เดือน = 2027-02-28
+export function addMonths(d: string, n: number): string {
+  const x = parse(d);
+  const y = new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth() + n, 1));
+  const last = new Date(Date.UTC(y.getUTCFullYear(), y.getUTCMonth() + 1, 0)).getUTCDate();
+  y.setUTCDate(Math.min(x.getUTCDate(), last));
+  return ymd(y);
+}
+export const monthStart = (d: string) => d.slice(0, 8) + '01';
+export const monthEnd = (d: string) => addDays(addMonths(monthStart(d), 1), -1);
+// พฤศจิกายน 2569
+const MON_FULL = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+export function thMonth(d: string): string {
+  const x = parse(d);
+  return `${MON_FULL[x.getUTCMonth()]} ${x.getUTCFullYear() + 543}`;
+}
+const DOW_FULL = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+export const dowFull = (d: string) => DOW_FULL[parse(d).getUTCDay()];

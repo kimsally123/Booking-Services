@@ -244,3 +244,9 @@ psql "$SUPABASE_DB_URL" -f tests/db_test.sql
 - ถ้าตั้ง `NEXT_PUBLIC_LIFF_ID` ใน env ค่านั้นมาก่อน
 - ปุ่มต่าง ๆ ใช้โดเมน Vercel อัตโนมัติ (`VERCEL_PROJECT_PRODUCTION_URL`) ต้องเปิด "Enable access to System Environment Variables" ใน Vercel (ค่าเริ่มต้นเปิด)
 - ทดสอบ: `./scripts/e2e_reschedule.sh` (14 ข้อ · ใช้ฐานข้อมูลที่เพิ่ง seed)
+
+## ปฏิทินจองฝั่งลูกค้า
+- ทุกธุรกิจเลือกวันจากปฏิทินรายเดือน (เลื่อนดูได้ 3 เดือน · จองล่วงหน้าได้ไม่เกิน 2 เดือน) ตั้งค่าใน `lib/rules.ts`
+- ข้อมูลทั้งปฏิทินมาจาก `GET /api/availability?type=month&biz=…` ครั้งเดียว (`lib/calendar.ts`)
+- Pet hotel พักได้สูงสุด 30 คืน · Villa 14 คืน · server ตรวจซ้ำตอนคิดราคา/จอง (ช่วงวัน · จำนวนคืน · วันเข้า/ออกที่ร้านปิด)
+- Grooming: ช่างแต่ละคนมีโควตาคิวต่อวัน `staff.daily_quota` (ค่าเริ่มต้น 4) · วันหยุดใช้ `staff.work_days`

@@ -1,6 +1,6 @@
 // ไอคอนที่ใช้ทั้งแอป (โหลดเฉพาะชุดนี้จาก Google Fonts · เพิ่มไอคอนใหม่ต้องเพิ่มที่นี่)
 export const ICONS = Array.from(new Set([
-  'add', 'arrow_back', 'bed', 'check', 'chevron_right', 'close', 'content_cut', 'cottage', 'event',
+  'add', 'arrow_back', 'bed', 'check', 'chevron_left', 'chevron_right', 'close', 'content_cut', 'cottage', 'event',
   'info', 'more_horiz', 'pets', 'pool', 'remove', 'schedule', 'upload', 'vaccines', 'warning',
   'receipt_long', 'sound_detection_dog_barking', 'person', 'badge', 'shield_person', 'gavel', 'support_agent', 'add_a_photo',
   'calendar_month', 'today', 'menu', 'check_circle', 'cancel', 'flag', 'login', 'logout', 'list_alt', 'group', 'tune',

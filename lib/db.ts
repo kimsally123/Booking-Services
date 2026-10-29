@@ -15,7 +15,10 @@ function make() {
   return postgres(url, {
     prepare: false,
     max: 5,
-    idle_timeout: 20,
+    // serverless: ปิด connection ที่ว่างเร็ว ๆ และไม่ใช้ตัวเก่านานเกิน กันค้างกับ socket ที่ pooler ตัดไปแล้ว
+    idle_timeout: 5,
+    max_lifetime: 60,
+    connect_timeout: 10,
     connection: { TimeZone: 'Asia/Bangkok' },
     types: { numeric: { to: 1700, from: [1700], serialize: (x: number) => String(x), parse: (x: string) => Number(x) } },
   });

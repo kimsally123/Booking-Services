@@ -3,9 +3,11 @@ import { sessionAvailability, slotAvailability, stayAvailability } from '@/lib/b
 import { BookingError } from '@/lib/booking';
 import { CODE, DATE, fail } from '@/lib/api';
 import { sql } from '@/lib/db';
+import { monthAvailability } from '@/lib/calendar';
 
 export const dynamic = 'force-dynamic';
 
+// GET /api/availability?type=month&biz=grooming&service=G-BATH&addons=&tier=S   ← ปฏิทิน 3 เดือน
 // GET /api/availability?type=stay&biz=pet_hotel&from=2026-11-21&to=2026-11-22&pets=1&guests=2&maxkg=6
 // GET /api/availability?type=session&biz=pool&date=2026-11-21&kg=3.2,9
 // GET /api/availability?type=slot&biz=grooming&date=2026-11-21&service=G-BATH&addons=A-NAIL&tier=S
@@ -20,6 +22,14 @@ export async function GET(req: NextRequest) {
     const biz = need('biz', CODE);
     await sql`select expire_holds()`; // ปล่อยที่ที่หมดเวลาก่อนนับที่ว่าง
     const type = q.get('type');
+    if (type === 'month') {
+      const svc = q.get('service'), tier = q.get('tier');
+      return NextResponse.json(await monthAvailability(biz, {
+        service: svc && CODE.test(svc) ? svc : undefined,
+        addons: (q.get('addons') || '').split(',').filter((x) => CODE.test(x)),
+        tier: tier && CODE.test(tier) ? tier : null,
+      }));
+    }
     if (type === 'stay') {
       const units = await stayAvailability(biz, need('from', DATE), need('to', DATE), Number(q.get('pets') || 0),
         q.get('guests') ? Number(q.get('guests')) : null, q.get('maxkg') ? Number(q.get('maxkg')) : null);
@@ -35,7 +45,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(await slotAvailability(biz, need('date', DATE), need('service', CODE), addons,
         tier && CODE.test(tier) ? tier : null));
     }
-    throw new BookingError('bad_param', 'type ต้องเป็น stay, session หรือ slot');
+    throw new BookingError('bad_param', 'type ต้องเป็น month, stay, session หรือ slot');
   } catch (e) {
     return fail(e);
   }
