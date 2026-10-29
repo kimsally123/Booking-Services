@@ -16,7 +16,11 @@ export default function LoginClient({ liffId, next, oa, shop }: { liffId: string
       try {
         const liff = (await import('@line/liff')).default;
         await liff.init({ liffId });
-        if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+        if (!liff.isLoggedIn()) {
+          const back = new URL(location.href);
+          ['code', 'state', 'liffClientId', 'liffRedirectUri', 'error', 'error_description', 'liff.state'].forEach((k) => back.searchParams.delete(k));
+          liff.login({ redirectUri: back.toString() }); return;
+        }
         const idToken = liff.getIDToken();
         if (!idToken) throw new Error('ไม่ได้รับข้อมูลจาก LINE ลองเปิดใหม่จากเมนูร้าน');
         const r = await fetch('/api/auth/line', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ idToken }) });
