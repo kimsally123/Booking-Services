@@ -4,7 +4,9 @@ import { bizLook } from '@/lib/look';
 import { sql } from '@/lib/db';
 import { me } from '@/lib/me';
 import LiffGate from '@/components/LiffGate';
+import BookingCard from '@/components/cust/BookingCard';
 import { CustScreen } from '@/components/cust/Gate';
+import { myOrders } from '@/lib/orders';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +18,10 @@ export default async function Home() {
     sql`select code from businesses where active and is_closed(code, null, null, (now() at time zone 'Asia/Bangkok')::date)`,
   ]);
   const closedToday = new Set(closedRows.map((r) => r.code as string));
+  // การจองที่ยังไม่ถึงวัน/กำลังใช้ (ตามต้นแบบหน้าแรก)
+  const now = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 16).replace('T', ' ');
+  const upcoming = m.code ? (await myOrders(m.code)).filter((o) => ['holding', 'pending_review', 'paid'].includes(o.status)
+    && o.items.some((i) => !['cancelled', 'expired', 'done', 'no_show'].includes(i.status) && i.e >= now)).slice(0, 5) : [];
   return (
     <LiffGate loggedIn={!!m.code}>
       <CustScreen>
@@ -35,6 +41,8 @@ export default async function Home() {
             );
           })}
         </div>
+        {upcoming.length > 0 && <div className="section" style={{ marginTop: 14, color: 'var(--ink-2)' }}>การจองของฉัน</div>}
+        {upcoming.map((o) => <BookingCard key={o.code} o={o as never} biz={cat.businesses as never} />)}
       </CustScreen>
     </LiffGate>
   );

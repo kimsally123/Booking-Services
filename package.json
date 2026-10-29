@@ -13,12 +13,14 @@
   },
   "dependencies": {
     "@line/liff": "2.31.1",
+    "jsqr": "^1.4.0",
     "next": "15.5.28",
     "postgres": "3.4.9",
     "qrcode": "1.5.4",
     "react": "19.2.9",
     "react-dom": "19.2.9",
-    "server-only": "0.0.1"
+    "server-only": "0.0.1",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

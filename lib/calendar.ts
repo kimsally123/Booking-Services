@@ -14,7 +14,7 @@ export type MonthData = {
   days: Record<string, DayInfo>;
   units?: { code: string; price: number; weekend_price: number | null; busy: string[]; off: string[] }[];
   sessions?: Record<string, { open: number; later: number; free: number }>;
-  slots?: Record<string, { free: number; reason: string | null }>;
+  slots?: Record<string, { free: number; staff?: number; reason: string | null }>;
 };
 
 export async function monthAvailability(bizCode: string, opt: { service?: string; addons?: string[]; tier?: string | null }): Promise<MonthData> {
@@ -89,14 +89,16 @@ export async function monthAvailability(bizCode: string, opt: { service?: string
       const working = gs.filter((g) => g.work_days.includes(isoDow(d)));
       if (!working.length) { slots[d] = { free: 0, reason: 'ช่างหยุดทุกคนวันนี้' }; continue; }
       const times = new Set<number>();
-      let quotaFull = 0;
+      let quotaFull = 0, staffFree = 0;
       for (const g of working) {
         const mine = bk.filter((x) => x.staff_code === g.code && x.day === d);
         if (mine.length >= g.quota) { quotaFull++; continue; }
-        groomerStarts(g, mine.map((x) => [toMin(x.a), toMin(x.z)] as [number, number]), total, leadNow(d)).forEach((m) => times.add(m));
+        const st = groomerStarts(g, mine.map((x) => [toMin(x.a), toMin(x.z)] as [number, number]), total, leadNow(d));
+        if (st.length) staffFree++;
+        st.forEach((m) => times.add(m));
       }
       const late = !times.size && working.every((g) => !groomerStarts(g, [], total, leadNow(d), true).length);
-      slots[d] = { free: times.size, reason: times.size ? null : late ? 'วันนี้เลยเวลารับคิวแล้ว'
+      slots[d] = { free: times.size, staff: staffFree, reason: times.size ? null : late ? 'วันนี้เลยเวลารับคิวแล้ว'
         : quotaFull === working.length ? 'คิวช่างเต็มแล้ววันนี้' : 'ทุกเวลามีคนจองแล้ว' };
     }
     out.slots = slots;

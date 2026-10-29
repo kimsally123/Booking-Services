@@ -9,7 +9,7 @@ import { bizLook } from '@/lib/look';
 import { BOOK_ST, ORDER_ST, Pill } from '@/lib/status';
 import Head from '@/components/admin/Head';
 import ActBtn from '@/components/admin/ActBtn';
-import CancelOrder from '@/components/admin/CancelOrder';
+import CancelOrder, { CollectAtShop, MarkRefunded } from '@/components/admin/CancelOrder';
 import Reschedule from '@/components/admin/Reschedule';
 import { vaxState } from '@/lib/vax';
 
@@ -22,7 +22,7 @@ export default async function BookingDetail({ params }: { params: Promise<{ code
   const s = await currentStaff();
   if (!s) return null;
   const { code } = await params;
-  const [o] = await sql`select o.*, c.display_name as customer, c.phone, c.code as ccode from orders o join customers c on c.code = o.customer_code where o.code = ${code}`;
+  const [o] = await sql`select o.*, o.balance_due_by::text as balance_due_by, c.display_name as customer, c.phone, c.code as ccode from orders o join customers c on c.code = o.customer_code where o.code = ${code}`;
   if (!o) notFound();
   const items = await sql`
     select k.code, k.order_code, k.business_code, b.name as biz, b.color, b.booking_type, k.kind, k.status, k.price, k.guests, k.staff_code,
@@ -46,8 +46,8 @@ export default async function BookingDetail({ params }: { params: Promise<{ code
   const mismatch = pay && pay.amount_slip !== null && Number(pay.amount_slip) !== Number(pay.amount_due);
   const guests = items.reduce((a, i) => a + (i.guests || 0), 0);
   const petN = pets.length;
-  const paid = o.status === 'paid' ? Number(o.due_now) : 0;
-  const due = Number(o.total) - paid;
+  const paid = Number(o.paid_amount);
+  const due = o.status === 'cancelled' || o.status === 'expired' ? 0 : Number(o.total) - paid;
 
   return (
     <>
@@ -102,7 +102,9 @@ export default async function BookingDetail({ params }: { params: Promise<{ code
       <div>
         <div className="stat"><span>ยอดรวม</span><b className="num">{baht(o.total)}</b></div>
         <div className="stat"><span>ชำระแล้ว</span><b className="num">{baht(paid)}</b></div>
-        {due > 0 && <div className="stat"><span>ค้างชำระ (จ่ายที่ร้าน)</span><b className="num" style={{ color: 'var(--red-ink)' }}>{baht(due)}</b></div>}
+        {Number(o.balance_due) > 0 && <div className="stat"><span>ยอดคงเหลือออนไลน์ (ก่อน {o.balance_due_by ? thDate(String(o.balance_due_by).slice(0, 10)) : '-'})</span><b className="num" style={{ color: 'var(--red-ink)' }}>{baht(Number(o.balance_due))}</b></div>}
+        {due - Number(o.balance_due) > 0 && <div className="stat"><span>ค้างชำระ (จ่ายที่ร้าน)</span><b className="num" style={{ color: 'var(--red-ink)' }}>{baht(due - Number(o.balance_due))}</b></div>}
+        {o.refund_status && <div className="stat"><span>คืนเงิน</span><b>{({ pending: 'รอโอนคืน', credited: 'คืนเป็นเครดิตแล้ว', refunded: 'โอนคืนแล้ว', forfeited: 'ไม่คืน' } as Record<string, string>)[o.refund_status]} {Number(o.refund_amount) > 0 ? baht(Number(o.refund_amount)) : ''}</b></div>}
         <hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '8px 0' }} />
         <div className="stat"><span>เบอร์ลูกค้า</span><b className="num">{o.phone || '-'}</b></div>
       </div>
@@ -118,7 +120,10 @@ export default async function BookingDetail({ params }: { params: Promise<{ code
       {pay?.status === 'pending' && <Link href={`/admin/slips/${pay.code}`} className="btnw dark">ตรวจสลิป</Link>}
       {o.phone && <a href={`tel:${o.phone}`} className="btnw line">โทรหาลูกค้า</a>}
       <Link href={`/admin/customers/${o.ccode}`} className="btnw line">ดูลูกค้าและน้อง</Link>
-      <CancelOrder codes={items.filter((i) => ['holding', 'confirmed', 'checked_in', 'in_progress'].includes(i.status) && canSee(s, i.business_code)).map((i) => i.code)} />
+      {o.change_request && <div className="note y">ลูกค้าขอ: {o.change_request}</div>}
+      {o.refund_status === 'pending' && s.role !== 'staff' && <MarkRefunded order={o.code} amount={Number(o.refund_amount)} />}
+      {o.status === 'paid' && <CollectAtShop order={o.code} owe={due} />}
+      <CancelOrder order={o.code} canCancel={s.role !== 'staff'} codes={items.filter((i) => ['holding', 'confirmed', 'checked_in', 'in_progress'].includes(i.status) && canSee(s, i.business_code)).map((i) => i.code)} />
     </>
   );
 }

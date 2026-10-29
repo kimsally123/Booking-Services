@@ -2,7 +2,7 @@ import 'server-only';
 import { sql } from './db';
 import type { Business, CartItem, Pet, Quote, QuoteItem, QuoteLine } from './types';
 import { BOOK_AHEAD_MONTHS, lastBookable, maxNights } from './rules';
-import { addDays, baht, daysBetween, firstTime, fromMin, isoDow, thDate, thRange, toMin, todayTH } from './thaidate';
+import { addDays, baht, daysBetween, firstTime, fromMin, isoDow, thDate, thRange, thRangeDow, toMin, todayTH } from './thaidate';
 
 // เวลาไทย → timestamptz
 export const at = (date: string, time: string) => `${date} ${time}+07`;
@@ -37,8 +37,9 @@ function needVaccine(b: Business, pets: Pet[], onDate: string) {
   if (bad.length) throw new BookingError('vaccine_required', `${bad.map((p) => p.name).join(', ')} ยังไม่มีวัคซีนที่ผ่านตรวจถึงวันที่ใช้บริการ`);
 }
 
-export function depositOf(b: Business, price: number): number {
+export function depositOf(b: Business, price: number, firstNight = price): number {
   if (b.deposit_type === 'full') return price;
+  if (b.deposit_type === 'first_night') return Math.min(firstNight, price);
   if (b.deposit_type === 'percent') return Math.round((price * Number(b.deposit_value)) / 100);
   return Math.min(Number(b.deposit_value), price);
 }
@@ -148,13 +149,13 @@ export async function groomMinutes(bizCode: string, service: string, addons: str
   return d.mins + d.addons.reduce((a, x) => a + x.mins, 0);
 }
 
-export async function slotAvailability(bizCode: string, date: string, service: string, addons: string[], tier: string | null) {
+export async function slotAvailability(bizCode: string, date: string, service: string, addons: string[], tier: string | null, pets: string[] = []) {
   const b = await business(bizCode);
   if (b.booking_type !== 'slot') throw new BookingError('wrong_type', 'ธุรกิจนี้ไม่ใช่การจองแบบช่องเวลา');
   const total = await groomMinutes(bizCode, service, addons, tier);
   type Slot = { start: string; staff: string; staff_name: string };
   const [{ closed }] = await sql`select is_closed(${bizCode}, null, null, ${date}::date) as closed`;
-  if (closed) return { minutes: total, slots: [] as Slot[], grid: [] as { start: string; staff: string | null; staff_name: string | null }[], closed: true };
+  if (closed) return { minutes: total, slots: [] as Slot[], grid: [] as { start: string; staff: string | null; staff_name: string | null; free: { staff: string; staff_name: string }[] }[], closed: true };
 
   const dow = isoDow(date);
   const working = (await groomers(bizCode)).filter((g) => g.work_days.includes(dow));
@@ -163,7 +164,7 @@ export async function slotAvailability(bizCode: string, date: string, service: s
     from bookings where kind = 'slot' and status in ${sql(ACTIVE)} and staff_code in ${sql(working.map((g) => g.code))}
       and (start_at at time zone 'Asia/Bangkok')::date = ${date}::date` : [];
   const nowMin = leadNow(date);
-  const byTime = new Map<string, Slot>();
+  const byTime = new Map<string, Slot[]>();       // เวลา → ช่างที่ว่างทุกคน
   const all = new Set<number>();
   for (const g of working) {
     const mine = bk.filter((x) => x.staff_code === g.code);
@@ -172,13 +173,22 @@ export async function slotAvailability(bizCode: string, date: string, service: s
     const busy = mine.map((x) => [toMin(x.a), toMin(x.z)] as [number, number]);
     for (const m of groomerStarts(g, busy, total, nowMin)) {
       const k = fromMin(m);
-      if (!byTime.has(k)) byTime.set(k, { start: k, staff: g.code, staff_name: g.display_name });
+      byTime.set(k, [...(byTime.get(k) ?? []), { start: k, staff: g.code, staff_name: g.display_name }]);
     }
   }
-  const slots = [...byTime.values()].sort((a, z) => a.start.localeCompare(z.start));
+  // น้องที่เลือกมีคิว Grooming อื่นวันนี้แล้ว → เวลาที่ทับกันไม่ให้เลือก
+  const petBusy = pets.length ? (await sql`
+    select to_char(k.start_at at time zone 'Asia/Bangkok', 'HH24:MI') as a, to_char(k.end_at at time zone 'Asia/Bangkok', 'HH24:MI') as z
+    from bookings k join booking_pets bp on bp.booking_code = k.code
+    where k.kind = 'slot' and k.status in ${sql(ACTIVE)} and bp.pet_code in ${sql(pets)}
+      and (k.start_at at time zone 'Asia/Bangkok')::date = ${date}::date`).map((x) => [toMin(x.a), toMin(x.z)] as [number, number]) : [];
+  const clash = (m: number) => petBusy.some(([a, z]) => m < z && m + total > a);
+  for (const k of [...byTime.keys()]) if (clash(toMin(k))) byTime.delete(k);
+  const slots = [...byTime.values()].map((x) => x[0]).sort((a, z) => a.start.localeCompare(z.start));
   const grid = [...all].sort((a, z) => a - z).map((m) => {
-    const s = byTime.get(fromMin(m));
-    return { start: fromMin(m), staff: s?.staff ?? null, staff_name: s?.staff_name ?? null };
+    const free = byTime.get(fromMin(m)) ?? [];
+    return { start: fromMin(m), staff: free[0]?.staff ?? null, staff_name: free[0]?.staff_name ?? null,
+             free: free.map((f) => ({ staff: f.staff, staff_name: f.staff_name })), ...(clash(m) ? { pet_busy: true } : {}) };
   });
   return { minutes: total, slots, grid, closed: false };
 }
@@ -191,7 +201,7 @@ export async function quote(customer: string, items: CartItem[]): Promise<Quote>
     const b = await business(it.business);
     if (b.booking_type !== it.kind) throw new BookingError('wrong_type', 'ชนิดการจองไม่ตรงธุรกิจ');
     await withinWindow(b, it);
-    let title = '', when = '', price = 0, start_at = '', end_at = '';
+    let title = '', when = '', price = 0, start_at = '', end_at = '', firstNight = 0;
     const lines: QuoteLine[] = [];
 
     if (it.kind === 'stay') {
@@ -208,13 +218,14 @@ export async function quote(customer: string, items: CartItem[]): Promise<Quote>
         const dow = isoDow(addDays(it.from, i));
         const p = (dow === 5 || dow === 6) && u.weekend_price !== null ? Number(u.weekend_price) : Number(u.price);
         room += p; if (p !== Number(u.price)) wk++;
+        if (i === 0) firstNight = p + (pets.length && u.pet_fee ? Number(u.pet_fee) * pets.length : 0);
       }
       lines.push({ label: `${u.name} × ${nights} คืน`, amount: room, note: wk ? `รวมราคาศุกร์–เสาร์ ${wk} คืน` : undefined });
       if (pets.length && u.pet_fee) {
         lines.push({ label: `ค่าน้อง ${pets.length} ตัว × ${nights} คืน`, amount: Number(u.pet_fee) * pets.length * nights });
       }
       title = pets.length ? `${u.name} · ${pets.map((p) => p.name).join(', ')}` : u.name;
-      when = `${thRange(it.from, it.to)} · ${nights} คืน`;
+      when = `${thRangeDow(it.from, it.to)} · ${nights} คืน`;
       const t = stayTimes(b); start_at = at(it.from, t.in); end_at = at(it.to, t.out);
     }
 
@@ -224,7 +235,10 @@ export async function quote(customer: string, items: CartItem[]): Promise<Quote>
       needVaccine(b, pets, it.date);
       const s = (await sessionAvailability(b.code, it.date, pets.map((p) => Number(p.weight_kg)))).find((x) => x.code === it.session);
       if (!s) throw new BookingError('session_invalid', 'ไม่มีรอบนี้ในวันที่เลือก');
-      if (!s.free) throw new BookingError('session_full', `รอบ ${s.start}: ${s.reason}`);
+      if (!s.free) {
+        const code = /ขนาด/.test(s.reason ?? '') ? 'size_mismatch' : /ปิด/.test(s.reason ?? '') ? 'closed_day' : /เลยเวลา/.test(s.reason ?? '') ? 'too_late' : 'session_full';
+        throw new BookingError(code, `รอบ ${s.start}: ${s.reason}`);
+      }
       const [ps] = await sql`select price from pool_sessions where code = ${it.session}`;
       lines.push({ label: `รอบ ${s.start}–${s.end} × ${pets.length} ตัว`, amount: Number(ps.price) * pets.length });
       title = `สระ ${s.start} · ${pets.map((p) => p.name).join(', ')}`;
@@ -238,6 +252,7 @@ export async function quote(customer: string, items: CartItem[]): Promise<Quote>
       const date = it.start.slice(0, 10), time = it.start.slice(11, 16);
       const d = await groomDuration(b.code, it.service, it.addons, pet.tier_code);
       const av = await slotAvailability(b.code, date, it.service, it.addons, pet.tier_code);
+      if (av.closed) throw new BookingError('closed_day', 'ร้านปิดวันที่เลือก');
       // ช่างที่เลือกต้องว่างเวลานั้น (เช็กกับคิวจริงอีกครั้งตอนสร้างการจอง)
       const ok = av.slots.some((s) => s.start === time) &&
         (await slotFreeFor(it.staff, date, time, av.minutes));
@@ -251,11 +266,20 @@ export async function quote(customer: string, items: CartItem[]): Promise<Quote>
     }
 
     price = lines.reduce((a, l) => a + l.amount, 0);
-    out.push({ business: b.code, title, when, lines, price, deposit: depositOf(b, price), start_at, end_at });
+    let deposit = depositOf(b, price, firstNight || price), balance = 0, balance_by: string | null = null;
+    if (b.balance_days && deposit < price) {
+      // ยอดคงเหลือต้องจ่ายออนไลน์ก่อนวันใช้บริการ N วัน · จองใกล้กว่านั้นจ่ายเต็มตอนจอง
+      const startD = start_at.slice(0, 10);
+      if (daysBetween(todayTH(), startD) <= b.balance_days) deposit = price;   // วันครบกำหนดต้องอยู่หลังวันนี้
+      else { balance = price - deposit; balance_by = addDays(startD, -b.balance_days); }
+    }
+    out.push({ business: b.code, title, when, lines, price, deposit, balance, balance_by, start_at, end_at });
   }
   const total = out.reduce((a, i) => a + i.price, 0);
   const due_now = out.reduce((a, i) => a + i.deposit, 0);
-  return { items: out, total, due_now, pay_later: total - due_now };
+  const balance = out.reduce((a, i) => a + i.balance, 0);
+  const balance_by = out.map((i) => i.balance_by).filter((x): x is string => !!x).sort()[0] ?? null;
+  return { items: out, total, due_now, balance, balance_by, pay_later: total - due_now - balance };
 }
 
 async function slotFreeFor(staff: string, date: string, time: string, minutes: number) {

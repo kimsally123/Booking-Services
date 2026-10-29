@@ -1,5 +1,6 @@
 import 'server-only';
 import { sql } from './db';
+import { enqueue } from './notify';
 import { BookingError } from './booking';
 import { canSee, type StaffUser } from './staff';
 
@@ -130,8 +131,42 @@ export async function applySetting(s: StaffUser, kind: string, d: D) {
       const from = str(d.date_from, 10), to = str(d.date_to, 10) || from;
       if (!DATE.test(from) || !DATE.test(to) || to < from) throw new BookingError('bad', 'เลือกวันที่ให้ถูกต้อง');
       const unit = str(d.unit_code, 40) || null, sess = str(d.session_code, 40) || null;
-      await sql`insert into closures (business_code, unit_code, session_code, date_from, date_to, reason)
-                values (${biz}, ${unit}, ${sess}, ${from}, ${to}, ${str(d.reason, 80) || null})`;
+      const reason = str(d.reason, 80) || null;
+      // การจองที่โดนวันปิด: ต้องยืนยันก่อน แล้วระบบแจ้งลูกค้าทุกคน (ร้านเลื่อน/คืนเงินเต็มต่อในหน้าการจอง)
+      const hit = await sql`
+        select distinct k.order_code, o.status as order_status from bookings k join orders o on o.code = k.order_code
+        where k.business_code = ${biz} and booking_active(k.status)
+          and (${unit}::text is null or k.unit_code = ${unit}) and (${sess}::text is null or k.session_code = ${sess})
+          and tstzrange(k.start_at, k.end_at, '[)') && tstzrange((${from}::date)::timestamp at time zone 'Asia/Bangkok', ((${to}::date) + 1)::timestamp at time zone 'Asia/Bangkok', '[)')`;
+      if (hit.length && d.notify !== true) throw new BookingError('has_bookings', `มีลูกค้าจองไว้แล้ว ${hit.length} การจองในช่วงนี้ · ติ๊ก "แจ้งลูกค้าที่จองไว้" แล้วกดเพิ่มอีกครั้ง`);
+      await sql.begin(async (tx) => {
+        await tx`insert into closures (business_code, unit_code, session_code, date_from, date_to, reason)
+                  values (${biz}, ${unit}, ${sess}, ${from}, ${to}, ${reason})`;
+        for (const h of hit) {
+          if (h.order_status === 'holding') {
+            // ยังไม่ได้ยืนยัน (รอสลิป) → ยกเลิกเลย กันลูกค้าโอนเข้ามาในวันที่ปิด · เงินที่ได้บางส่วน/เครดิตคืนอัตโนมัติ
+            const [c] = await tx`update orders set status = 'cancelled', cancel_source = 'closed', hold_until = null
+                                 where code = ${h.order_code} and status = 'holding' returning code`;
+            if (!c) continue;
+            await tx`update bookings set status = 'cancelled' where order_code = ${h.order_code} and status = 'holding'`;
+            await tx`update payments set status = 'rejected', reject_kind = 'other', reject_reason = 'ร้านปิดวันที่จอง'
+                     where order_code = ${h.order_code} and status = 'pending'`;
+            await tx`select release_money(${h.order_code})`;
+            await enqueue(tx, { order: h.order_code, channel: 'line_push', template: 'cancelled',
+              payload: { reason: `ร้านปิดวันที่จอง${reason ? ' (' + reason + ')' : ''} · จองวันอื่นได้เลย` } });
+          } else {
+            await enqueue(tx, { order: h.order_code, channel: 'line_push', template: 'closed_day', payload: { reason } });
+          }
+        }
+      });
+      return { affected: hit.length };
+    }
+    case 'calendar.save': {
+      // รหัสปฏิทิน Google ของแต่ละธุรกิจ (ไม่ใช่ค่าลับ · แชร์ปฏิทินให้อีเมล service account ก่อน)
+      const biz = str(d.business_code, 40); need(s, biz);
+      const cal = str(d.calendar_id, 200);
+      if (cal && !/^[\w.+-]+@[\w.-]+$/.test(cal)) throw new BookingError('bad', 'รหัสปฏิทินมีรูปแบบเหมือนอีเมล เช่น xxxx@group.calendar.google.com');
+      await sql`update businesses set calendar_id = ${cal || null} where code = ${biz}`;
       return {};
     }
     case 'closure.delete': {
@@ -148,7 +183,10 @@ export async function applySetting(s: StaffUser, kind: string, d: D) {
       const rules = (Array.isArray(d.cancel_rules) ? (d.cancel_rules as D[]) : [])
         .map((r) => ({ days: int(r.days, 0, 365) ?? 0, refund: int(r.refund, 0, 100) ?? 0 })).sort((a, b) => b.days - a.days).slice(0, 6);
       const text = str(d.cancel_policy, 400) || policyText(rules);
-      await sql`update businesses set deposit_type = ${type}, deposit_value = ${val}, cancel_rules = ${sql.json(rules)}, cancel_policy = ${text} where code = ${biz}`;
+      const bd = type === 'full' || !d.balance_days ? null : Math.min(60, Math.max(1, Math.round(Number(d.balance_days)) || 0)) || null;
+      const guide = d.guide === undefined ? undefined : (str(d.guide, 2000) || null);
+      if (guide !== undefined) await sql`update businesses set guide = ${guide} where code = ${biz}`;
+      await sql`update businesses set deposit_type = ${type}, deposit_value = ${val}, balance_days = ${bd}, cancel_rules = ${sql.json(rules)}, cancel_policy = ${text} where code = ${biz}`;
       if (d.hold_minutes !== undefined) { owner(s); const h = int(d.hold_minutes, 5, 1440) ?? 30; await sql`update settings set value = ${String(h)} where key = 'hold_minutes'`; }
       return {};
     }
@@ -161,14 +199,17 @@ export async function applySetting(s: StaffUser, kind: string, d: D) {
     // ---------- ค่าร้าน (เจ้าของ) ----------
     case 'settings.save': {
       owner(s);
-      const ALLOW = ['liff_id', 'shop_name', 'legal_name', 'promptpay_id', 'account_name', 'notify_email', 'line_oa_id', 'shop_phone', 'remind_hours_before',
-        'msg_paid', 'msg_reminder', 'msg_slip_rejected', 'msg_groom_done', 'msg_cancelled', 'msg_vaccine', 'msg_rescheduled'];
+      const ALLOW = ['liff_id', 'shop_name', 'legal_name', 'promptpay_id', 'account_name', 'notify_email', 'line_oa_id', 'shop_phone', 'shop_address', 'shop_map_url', 'remind_hours_before',
+        'msg_paid', 'msg_reminder', 'msg_slip_rejected', 'msg_groom_done', 'msg_cancelled', 'msg_vaccine', 'msg_rescheduled',
+        'ocr_enabled', 'ocr_month_limit'];
       const v = (d.values ?? {}) as D;
       for (const [k, val] of Object.entries(v)) {
         if (!ALLOW.includes(k)) continue;
         let x = str(val, 200);
         if (k === 'promptpay_id' && x && !/^(\d{10}|\d{13}|\d{15})$/.test(x.replace(/\D/g, ''))) throw new BookingError('bad', 'เลขพร้อมเพย์ต้องเป็นเบอร์ 10 หลัก หรือเลข 13/15 หลัก');
         if (k === 'promptpay_id') x = x.replace(/\D/g, '');
+        if (k === 'ocr_month_limit' && !/^\d{1,6}$/.test(x)) throw new BookingError('bad', 'ใส่จำนวนรูปต่อเดือนเป็นตัวเลข');
+        if (k === 'ocr_enabled' && x !== 'on' && x !== 'off') throw new BookingError('bad', 'ค่าต้องเป็น on หรือ off');
         if (k === 'liff_id' && x && !/^\d{6,}-[A-Za-z0-9]{4,}$/.test(x)) throw new BookingError('bad', 'LIFF ID ต้องเป็นรูปแบบ 2001234567-AbCdEfGh');
         if (k.startsWith('msg_')) x = x === 'off' ? 'off' : 'on';
         await sql`insert into settings (key, value) values (${k}, ${x}) on conflict (key) do update set value = excluded.value`;

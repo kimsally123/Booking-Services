@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     if (!c?.pdpa_at) throw new BookingError('no_consent', 'กรุณายอมรับการเก็บข้อมูลก่อนจอง');
     const b = (await req.json().catch(() => null)) as { items?: CartItem[]; accept?: boolean } | null;
     if (!b || !Array.isArray(b.items)) throw new BookingError('bad_cart', 'ข้อมูลไม่ถูกต้อง');
-    return NextResponse.json(await createOrder(customer, b.items, b.accept === true));
+    return NextResponse.json(await createOrder(customer, b.items, b.accept === true, (b as { use_credit?: boolean }).use_credit === true));
   } catch (e) {
     return fail(e);
   }

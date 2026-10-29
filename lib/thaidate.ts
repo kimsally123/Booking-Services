@@ -41,6 +41,12 @@ export function thRange(a: string, b: string): string {
   if (x.getUTCMonth() === y.getUTCMonth()) return `${x.getUTCDate()}–${y.getUTCDate()} ${MON[x.getUTCMonth()]}`;
   return `${x.getUTCDate()} ${MON[x.getUTCMonth()]} – ${y.getUTCDate()} ${MON[y.getUTCMonth()]}`;
 }
+// ส. 21 – จ. 23 พ.ย. (มีชื่อวัน)
+export function thRangeDow(a: string, b: string): string {
+  const x = parse(a), y = parse(b);
+  if (x.getUTCMonth() === y.getUTCMonth()) return `${thDate(a, false)} – ${thDate(b, false)} ${MON[y.getUTCMonth()]}`;
+  return `${thDate(a)} – ${thDate(b)}`;
+}
 // วันนี้ตามเวลาไทย
 export function todayTH(now = new Date()): string {
   return ymd(new Date(now.getTime() + 7 * 3600000));

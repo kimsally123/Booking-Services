@@ -1,3 +1,4 @@
+import Empty from '@/components/Empty';
 import Link from 'next/link';
 import { sql } from '@/lib/db';
 import { canSee, currentStaff } from '@/lib/staff';
@@ -107,7 +108,7 @@ export default async function Cal({ searchParams }: { searchParams: Promise<{ da
         </>
       ) : (
         <div>
-          {!rows.length && <div className="note">ไม่มีการจองวันนี้</div>}
+          {!rows.length && <Empty icon="calendar_month" title="วันนี้ยังว่าง" text="ยังไม่มีงานที่ยืนยันแล้ว · การจองที่สลิปผ่านจะขึ้นในปฏิทินอัตโนมัติ" />}
           {rows.sort((a, b) => a.time.localeCompare(b.time)).map((r) => { const L = look(r.business_code); return (
             <Link key={r.code + r.phase} href={`/admin/b/${r.order_code}`} className="row">
               <span className="tm num">{r.phase === 'during' ? '' : r.time}</span>

@@ -23,9 +23,9 @@ export function promptPayPayload(id: string, amount: number): string {
     tlv('00', '01') +
     tlv('01', amount > 0 ? '12' : '11') +
     tlv('29', tlv('00', 'A000000677010111') + acc) +
+    tlv('58', 'TH') +
     tlv('53', '764') +
     (amount > 0 ? tlv('54', amount.toFixed(2)) : '') +
-    tlv('58', 'TH') +
     '6304';
   return body + crc16(body);
 }

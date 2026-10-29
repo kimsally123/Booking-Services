@@ -123,4 +123,5 @@ on conflict (prefix, day) do update set n = greatest(code_counters.n, excluded.n
 insert into code_counters (prefix, day, n)
 select 'PAY', '', max(split_part(code, '-', 2)::int) from payments where code ~ '^PAY-[0-9]+$' having count(*) > 0
 on conflict (prefix, day) do update set n = greatest(code_counters.n, excluded.n);
+update businesses set balance_days = 7 where code = 'villa' and balance_days is null;
 commit;

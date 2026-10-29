@@ -5,6 +5,7 @@ import type { BizCatalog, CartItem, Pet, Quote } from '@/lib/types';
 import { addDays, baht, daysBetween, isoDow, thDate, thDay } from '@/lib/thaidate';
 import { BottomBar, Photo, Progress, Stepper, Tick, TopBar } from './ui';
 import Calendar, { type Cell, type Mark } from './Calendar';
+import TripAddons, { type Addon } from './TripAddons';
 import { BOOK_AHEAD_MONTHS, lastBookable, maxNights } from '@/lib/rules';
 import { clearTrip, loadTrip, saveTrip, type TripEntry } from '@/lib/trip';
 import { bizLook } from '@/lib/look';
@@ -14,7 +15,7 @@ type Avail<T> = { loading: boolean; error: string | null; data: T | null };
 type UnitAv = { code: string; free: boolean; reason: string | null };
 type SessAv = { code: string; start: string; end: string; size_rule: string; left: number; capacity: number; free: boolean; reason: string | null };
 type SlotAv = { minutes: number; closed: boolean; slots: { start: string; staff: string; staff_name: string }[];
-                grid: { start: string; staff: string | null; staff_name: string | null }[] };
+                grid: { start: string; staff: string | null; staff_name: string | null; free: { staff: string; staff_name: string }[]; pet_busy?: boolean }[] };
 type MonthAv = {
   today: string; last: string; until: string;
   days: Record<string, { closed: boolean; reason: string | null }>;
@@ -46,8 +47,8 @@ function useFetch<T>(url: string | null, body?: unknown): Avail<T> {
   return st;
 }
 
-export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
-  { cat: BizCatalog; pets: Pet[]; loggedIn: boolean; today: string; initial?: { date?: string; service?: string } }) {
+export default function BookingFlow({ cat, pets, loggedIn, today, initial, credit = 0 }:
+  { cat: BizCatalog; pets: Pet[]; loggedIn: boolean; today: string; initial?: { date?: string; service?: string }; credit?: number }) {
   const router = useRouter();
   const b = cat.business;
   const forPeople = cat.units.some((u) => u.max_people);              // Villa = ที่พักคน
@@ -71,17 +72,20 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
   const word = forPeople ? 'หลัง' : 'ห้อง';
   const inWord = forPeople ? 'เข้าพัก' : 'เช็กอิน', outWord = forPeople ? 'เช็กเอาต์' : 'รับกลับ';
   const [guests, setGuests] = useState(2);
-  const [sel, setSel] = useState<string[]>([]);            // น้องที่เลือก
+  // น้องที่เลือก · Grooming เลือกตัวแรกไว้ให้ (1 คิวต่อ 1 ตัว)
+  const [sel, setSel] = useState<string[]>(b.booking_type === 'slot' && pets[0] ? [pets[0].code] : []);
   const [unit, setUnit] = useState<string | null>(null);
   const [date, setDate] = useState<string | null>(b.booking_type === 'stay' ? null : start);
   const [session, setSession] = useState<string | null>(null);
   const [service, setService] = useState<string | null>(initial?.service && mains.some((m) => m.code === initial.service) ? initial.service : null);
   const [addons, setAddons] = useState<string[]>([]);
   const [slot, setSlot] = useState<{ start: string; staff: string; staff_name: string } | null>(null);
+  const [time, setTime] = useState<string | null>(null);         // Grooming: เลือกเวลาก่อน แล้วเลือกช่าง
   const [toast, setToast] = useState('');
   const toastT = useRef<ReturnType<typeof setTimeout>>(undefined);
   const flash = (m: string) => { setToast(m); clearTimeout(toastT.current); toastT.current = setTimeout(() => setToast(''), 2400); };
   const [accept, setAccept] = useState(false);
+  const [useCredit, setUseCredit] = useState(credit > 0);
   const [busy, setBusy] = useState(false);
   const [orderErr, setOrderErr] = useState('');
   const [trip, setTrip] = useState<TripEntry[]>([]);
@@ -103,7 +107,7 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
   const sessAv = useFetch<{ sessions: SessAv[] }>(step === 'session' && date
     ? `/api/availability?type=session&biz=${b.code}&date=${date}&kg=${chosenPets.map((p) => p.weight_kg).join(',')}` : null);
   const slotAv = useFetch<SlotAv>(step === 'slot' && service && date
-    ? `/api/availability?type=slot&biz=${b.code}&date=${date}&service=${service}&addons=${addons.join(',')}&tier=${pet?.tier_code ?? ''}` : null);
+    ? `/api/availability?type=slot&biz=${b.code}&date=${date}&service=${service}&addons=${addons.join(',')}&tier=${pet?.tier_code ?? ''}${pet ? `&pets=${pet.code}` : ''}` : null);
 
   // ---------- ปฏิทิน ----------
   const unitSets = useMemo(() => (M?.units ?? []).map((u) => ({ ...u, B: new Set([...u.busy, ...u.off]) })), [M]);
@@ -179,7 +183,10 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
     if (b.booking_type === 'slot' && service && slot && pet && date) return { business: b.code, kind: 'slot', service, addons, staff: slot.staff, start: `${date}T${slot.start}`, pet: pet.code };
     return null;
   }, [b, unit, from, to, sel, guests, forPeople, session, date, service, slot, pet, addons]);
-  const allItems = cart ? [...trip.map((t) => t.item), cart] : [];
+  const [extras, setExtras] = useState<Addon[]>([]);          // รายการที่เพิ่มในการ์ด "เพิ่มให้ทริปนี้"
+  // เปลี่ยนวันหรือน้องของการจองหลัก = ล้างรายการที่เพิ่ม (วันในทริปเปลี่ยน)
+  useEffect(() => setExtras([]), [from, to, date, sel.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  const allItems = cart ? [...trip.map((t) => t.item), cart, ...extras.flatMap((x) => x.items)] : [];
   const q = useFetch<Quote>(step === 'summary' && cart ? '/api/quote' : null, cart ? { items: allItems } : undefined);
 
   // ---------- ราคาประมาณ (ระหว่างเลือก) ----------
@@ -208,7 +215,7 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
       return `${thDate(from)} – ${thDate(to)} · ${nights} คืน${sel.length ? ` · น้อง ${sel.length}` : ''}`;
     }
     if (b.booking_type === 'session') return date ? `${thDate(date)}${sel.length ? ` · ${sel.length} ตัว` : ''}` : 'เลือกวัน';
-    if (step === 'slot' || date) return date ? `${thDate(date)}${slot ? ' · ' + slot.start : ' · เลือกเวลา'}` : 'เลือกวันและเวลา';
+    if (step === 'slot' || date) return date ? `${thDate(date)}${slot ? ` · ${slot.start} · พี่${slot.staff_name}` : time ? ` · ${time} · เลือกช่าง` : ' · เลือกเวลา'}` : 'เลือกวันและเวลา';
     return pet ? pet.name : 'เลือกน้อง';
   })();
 
@@ -243,13 +250,13 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
     router.push(`/b/${x.offer_business}?trip=1&date=${offerDate(x.when_rule)}${svc}`);
   };
   const removeTrip = (k: number) => { const t = trip.filter((_, j) => j !== k); setTrip(t); saveTrip(t); };
-  const offers = cat.cross_sells.filter((x) => !/น้อง/.test(x.condition || '') || sel.length > 0);
+  const offers = cat.cross_sells;
 
   // สร้างการจองจริง → ไปหน้าจ่าย
   const placeOrder = async () => {
     if (!cart) return;
     setBusy(true); setOrderErr('');
-    const r = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ items: allItems, accept }) });
+    const r = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ items: allItems, accept, use_credit: useCredit && credit > 0 }) });
     const j = await r.json().catch(() => ({}));
     setBusy(false);
     if (!r.ok) { setOrderErr(j.message || 'จองไม่สำเร็จ'); return; }
@@ -390,7 +397,7 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
         const p = s.price_mode === 'flat' ? s : s.prices.find((x) => x.tier_code === pet?.tier_code);
         const tier = cat.tiers.find((t) => t.code === pet?.tier_code);
         return (
-          <button key={s.code} className={'card' + (service === s.code ? ' on' : '')} disabled={!p} onClick={() => { setService(s.code); setSlot(null); }}>
+          <button key={s.code} className={'card' + (service === s.code ? ' on' : '')} disabled={!p} onClick={() => { setService(s.code); setSlot(null); setTime(null); }}>
             <span className="t"><b>{s.name}</b><small>{[s.description, p?.duration_min ? `${p.duration_min} นาที` : ''].filter(Boolean).join(' · ')}</small></span>
             <span className="p num">{p ? baht(Number(p.price)) : '-'}<small>{s.price_mode === 'by_weight' ? tier?.label : ''}</small></span>
           </button>
@@ -401,9 +408,9 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
   if (step === 'addons') content = (
     <>
       <div className="h1">เพิ่มบริการเสริม</div>
-      <div className="sub">ไม่เลือกก็ได้</div>
+      <div className="sub">ไม่เลือกก็ได้ · ค่าสภาพขนช่างจะแจ้งก่อนเริ่มทำ</div>
       {addonList.map((a) => (
-        <button key={a.code} className={'card' + (addons.includes(a.code) ? ' on' : '')} onClick={() => { setAddons((x) => x.includes(a.code) ? x.filter((y) => y !== a.code) : [...x, a.code]); setSlot(null); }}>
+        <button key={a.code} className={'card' + (addons.includes(a.code) ? ' on' : '')} onClick={() => { setAddons((x) => x.includes(a.code) ? x.filter((y) => y !== a.code) : [...x, a.code]); setSlot(null); setTime(null); }}>
           <span className="t"><b>{a.name}</b></span>
           <span className="p num">{baht(Number(a.price))}</span>
           <Tick on={addons.includes(a.code)} />
@@ -415,7 +422,7 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
     <>
       <div className="h1">วันและเวลา</div>
       <div className="sub">เลือกวันจากปฏิทิน แล้วเลือกเวลาด้านล่าง</div>
-      {calendar(dayCell, (d) => (d === date ? 'one' : null), (d) => { setDate(d); setSlot(null); }, date)}
+      {calendar(dayCell, (d) => (d === date ? 'one' : null), (d) => { setDate(d); setSlot(null); setTime(null); }, date)}
       {date && (
         <>
           <div className="section">เวลา · {thDate(date)}</div>
@@ -425,15 +432,26 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
           {slotAv.data && (slotAv.data.closed || !slotAv.data.slots.length) && <div className="warn"><span className="ms">info</span>{slotAv.data.closed ? 'ร้านปิดวันนี้' : 'วันนี้คิวเต็ม ลองวันอื่น'}</div>}
           <div className="times">
             {slotAv.data?.grid.map((x) => {
-              const free = x.staff && x.staff_name ? { start: x.start, staff: x.staff, staff_name: x.staff_name } : null;
+              const n = x.free.length;
               return (
-                <button key={x.start} className={'chip' + (slot?.start === x.start ? ' on' : '') + (free ? '' : ' full')} disabled={!free}
-                  onClick={() => free && setSlot(free)}>
-                  <b className="num">{x.start}</b><small>{free ? 'พี่' + free.staff_name : 'เต็ม'}</small>
+                <button key={x.start} className={'chip' + (time === x.start ? ' on' : '') + (n ? '' : ' full')} disabled={!n}
+                  onClick={() => { setTime(x.start); setSlot(n === 1 ? { start: x.start, ...x.free[0] } : null); }}>
+                  <b className="num">{x.start}</b><small>{n ? `ว่าง ${n} ช่าง` : x.pet_busy ? 'น้องมีคิวแล้ว' : 'เต็ม'}</small>
                 </button>
               );
             })}
           </div>
+          {slotAv.data && !!slotAv.data.slots.length && <div className="section">ช่างที่ว่าง{time ? ` · ${time}` : ''}</div>}
+          {slotAv.data && !!slotAv.data.slots.length && !time && <div className="sub" style={{ color: 'var(--red-ink)' }}>เลือกเวลาก่อน</div>}
+          {time && (
+            <div className="grid2">
+              {(slotAv.data?.grid.find((x) => x.start === time)?.free ?? []).map((f) => (
+                <button key={f.staff} className={'chip' + (slot?.staff === f.staff ? ' on' : '')} onClick={() => setSlot({ start: time, ...f })}>
+                  <b>พี่{f.staff_name}</b><small>ว่าง {time}</small>
+                </button>
+              ))}
+            </div>
+          )}
         </>
       )}
     </>
@@ -442,18 +460,24 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
     <>
       {q.loading && <><div className="skeleton" /><div className="skeleton" style={{ height: 140 }} /></>}
       {q.error && <div className="err">{q.error}</div>}
-      {q.data?.items.map((it, k) => (
+      {q.data?.items.slice(0, 1).map((it, k) => (
         <div key={k} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div className="h1" style={{ fontSize: 20 }}>{it.title}</div>
           <div className="sub">{it.when}</div>
         </div>
       ))}
+      {loggedIn && cart && (
+        <TripAddons offers={offers} pets={chosenPets} value={extras} onChange={setExtras}
+          main={{ kind: b.booking_type, from: from ?? date ?? today, to: to ?? date ?? today, date: date ?? from ?? today, nights, isVilla: forPeople }} />
+      )}
       {q.data && (
         <div className="bill">
           {q.data.items.flatMap((it) => it.lines).map((l, k) => <div key={k} className="l"><span>{l.label}{l.note ? ` (${l.note})` : ''}</span><span className="num">{baht(l.amount)}</span></div>)}
           <hr />
           <div className="l tot"><span>รวม</span><span className="num">{baht(q.data.total)}</span></div>
-          <div className="l"><span>จ่ายตอนจอง</span><span className="num">{baht(q.data.due_now)}</span></div>
+          {useCredit && credit > 0 && <div className="l"><span>ใช้เครดิต</span><span className="num">−{baht(Math.min(credit, q.data.due_now))}</span></div>}
+          <div className="l"><span>จ่ายตอนจอง</span><span className="num">{baht(q.data.due_now - (useCredit ? Math.min(credit, q.data.due_now) : 0))}</span></div>
+          {q.data.balance > 0 && <div className="l"><span>ยอดคงเหลือ · ชำระก่อน {q.data.balance_by ? thDate(q.data.balance_by) : '-'}</span><span className="num">{baht(q.data.balance)}</span></div>}
           {q.data.pay_later > 0 && <div className="l"><span>จ่ายที่ร้าน</span><span className="num">{baht(q.data.pay_later)}</span></div>}
         </div>
       )}
@@ -468,23 +492,10 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
           ))}
         </>
       )}
-      {q.data && loggedIn && trip.length < 6 && offers.length > 0 && (
-        <>
-          <div className="section">เพิ่มให้ทริปนี้ · จ่ายรวม QR เดียว</div>
-          {offers.map((x) => {
-            const L = bizLook(x.offer_business, x.offer_color, x.offer_type);
-            return (
-              <div key={x.offer_business + x.title} className="card" style={{ padding: 12 }}>
-                <span className="t">
-                  <span className="tag" style={{ background: L.bg, color: L.fg, alignSelf: 'flex-start' }}><span className="ms" style={{ fontSize: 15 }}>{L.icon}</span>{x.offer_name}</span>
-                  <b style={{ fontSize: 15 }}>{x.title}</b>
-                  <small>{thDate(offerDate(x.when_rule))}{x.condition ? ' · ' + x.condition : ''}</small>
-                </span>
-                <button className="btn ghost" style={{ height: 36, padding: '0 14px', fontSize: 14 }} onClick={() => addOffer(x)}>+ เพิ่ม</button>
-              </div>
-            );
-          })}
-        </>
+      {credit > 0 && q.data && (
+        <button className={'card' + (useCredit ? ' on' : '')} onClick={() => setUseCredit(!useCredit)}>
+          <span className="t"><b style={{ fontSize: 15 }}>ใช้เครดิต {baht(Math.min(credit, q.data.due_now))}</b><small>เครดิตคงเหลือ {baht(credit)}</small></span><Tick on={useCredit} />
+        </button>
       )}
       <div className="section">เงื่อนไขการจองและยกเลิก</div>
       <div className="sub" style={{ fontSize: 13 }}>{b.cancel_policy}</div>
@@ -507,7 +518,7 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial }:
       </div>
       <BottomBar
         note={last ? 'จ่ายวันนี้' : note}
-        amount={last ? (q.data ? baht(q.data.due_now) : '—') : estimate === null ? '—' : baht(estimate)}
+        amount={last ? (q.data ? baht(q.data.due_now - (useCredit ? Math.min(credit, q.data.due_now) : 0)) : '—') : estimate === null ? '—' : baht(estimate)}
         label={last ? 'ชำระเงิน' : step === 'addons' && !addons.length ? 'ข้าม' : 'ต่อไป'}
         red={last}
         disabled={!valid[step]}

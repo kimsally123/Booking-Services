@@ -5,14 +5,14 @@ import { bizLook } from '@/lib/look';
 import { DAYS, DayPick, Switch, useSave } from './util';
 
 type B = { code: string; name: string; color: string | null; booking_type: string; open_hours: string | null; closed_weekdays: number[];
-  checkin_time: string | null; checkout_time: string | null; deposit_type: string; deposit_value: number | null; cancel_rules: { days: number; refund: number }[]; cancel_policy: string };
+  checkin_time: string | null; checkout_time: string | null; deposit_type: string; deposit_value: number | null; balance_days: number | null; guide: string | null; cancel_rules: { days: number; refund: number }[]; cancel_policy: string };
 type C = { id: number; business_code: string; unit_code: string | null; session_code: string | null; date_from: string; date_to: string; reason: string | null; item: string | null };
 
 // ---------- เวลาเปิดและวันหยุด ----------
 export function Hours({ biz, closures, items }: { biz: B[]; closures: C[]; items: { code: string; name: string; business_code: string; kind: 'unit' | 'session' }[] }) {
   const [open, setOpen] = useState<string | null>(null);
   const [f, setF] = useState<B | null>(null);
-  const [n, setN] = useState({ business_code: biz[0]?.code ?? '', item: '', date_from: '', date_to: '', reason: '' });
+  const [n, setN] = useState({ business_code: biz[0]?.code ?? '', item: '', date_from: '', date_to: '', reason: '', notify: false });
   const { save, busy, Msg } = useSave();
   const dayTxt = (d: number[]) => (d.length ? 'ปิด' + d.map((x) => DAYS.find(([k]) => k === x)?.[1]).join(',') : 'ทุกวัน');
   return (
@@ -66,10 +66,11 @@ export function Hours({ biz, closures, items }: { biz: B[]; closures: C[]; items
           <label className="cap" style={{ flex: 1 }}>ถึง<input className="input" type="date" value={n.date_to} onChange={(e) => setN({ ...n, date_to: e.target.value })} /></label>
         </div>
         <input className="input" placeholder="เหตุผล (ลูกค้าเห็น) เช่น ซ่อมแอร์" value={n.reason} onChange={(e) => setN({ ...n, reason: e.target.value })} />
+        <label className="cap" style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="checkbox" checked={!!n.notify} onChange={(e) => setN({ ...n, notify: e.target.checked })} />แจ้งลูกค้าที่จองไว้แล้วในช่วงนี้ (ร้านเลื่อนหรือคืนเงินเต็มต่อในหน้าการจอง)</label>
         <button className="btnw dark" disabled={busy || !n.date_from} onClick={async () => {
           const [k, code] = n.item.split(':');
           if (await save('closure.add', { business_code: n.business_code, date_from: n.date_from, date_to: n.date_to || n.date_from, reason: n.reason,
-            unit_code: k === 'unit' ? code : '', session_code: k === 'session' ? code : '' }, 'เพิ่มวันปิดแล้ว')) setN({ ...n, date_from: '', date_to: '', reason: '', item: '' });
+            unit_code: k === 'unit' ? code : '', session_code: k === 'session' ? code : '', notify: !!n.notify }, 'เพิ่มวันปิดแล้ว · แจ้งลูกค้าที่จองไว้แล้ว (ถ้ามี)')) setN({ ...n, date_from: '', date_to: '', reason: '', item: '', notify: false });
         }}>เพิ่ม</button>
       </div>
     </>
@@ -93,6 +94,7 @@ export function Deposit({ biz, hold, isOwner }: { biz: B[]; hold: number; isOwne
       <span className="cap">มัดจำ</span>
       <div className="segbox">{[['full', 'จ่ายเต็ม'], ['percent', '%'], ['fixed', 'บาท']].map(([t, l]) => <button key={t} className={b.deposit_type === t ? 'on' : ''} onClick={() => upd({ deposit_type: t })}>{l}</button>)}</div>
       {b.deposit_type !== 'full' && <label className="cap">{b.deposit_type === 'percent' ? 'มัดจำกี่ % ของราคา' : 'มัดจำกี่บาท'}<input className="input num" inputMode="decimal" value={b.deposit_value ?? ''} onChange={(e) => upd({ deposit_value: Number(e.target.value) || 0 })} /></label>}
+      {b.deposit_type !== 'full' && b.booking_type === 'stay' && <label className="cap">จ่ายส่วนที่เหลือก่อนวันเข้ากี่วัน (เว้นว่าง = จ่ายที่ร้าน · จองใกล้กว่านี้จ่ายเต็ม)<input className="input num" inputMode="numeric" value={b.balance_days ?? ''} onChange={(e) => upd({ balance_days: Number(e.target.value) || null })} /></label>}
       {isOwner && <label className="cap">กันที่รอสลิป (นาที · ทุกธุรกิจ)<input className="input num" inputMode="numeric" value={h} onChange={(e) => setH(Number(e.target.value) || 0)} /></label>}
       <span className="cap">ยกเลิกก่อนวันใช้บริการ</span>
       {rules.map((r, i) => (
@@ -107,9 +109,11 @@ export function Deposit({ biz, hold, isOwner }: { biz: B[]; hold: number; isOwne
       <div style={{ display: 'flex', justifyContent: 'space-between' }}><span className="cap">น้อยกว่า {rules[rules.length - 1]?.days ?? 0} วัน</span><b>ไม่คืน</b></div>
       <button className="btnw line" onClick={() => upd({ cancel_rules: [...rules, { days: Math.max(0, (rules[rules.length - 1]?.days ?? 7) - 1), refund: 0 }] })}>+ เพิ่มขั้น</button>
       <div className="note"><b>ลูกค้าเห็น:</b> {text}</div>
-      <div className="cap">ระบบยังไม่คืนเงินอัตโนมัติ (เฟส 2) · พนักงานกดยกเลิกแล้วโอนคืนตามขั้นนี้</div>
+      <label className="cap">{b.booking_type === 'slot' ? 'เตรียมน้องก่อนมา' : 'กฎและสิ่งที่ต้องเตรียม'} (ปุ่มที่ 2 ของริชเมนู · ขึ้นบรรทัดใหม่ได้)
+        <textarea className="input" rows={4} value={b.guide ?? ''} onChange={(e) => upd({ guide: e.target.value })} /></label>
+      <div className="cap">ตอนกดยกเลิก ระบบเสนอยอดคืนตามขั้นนี้ · ร้านเลือกคืนเป็นเครดิต โอนคืน หรือไม่คืน</div>
       <Msg />
-      <button className="btnw dark" disabled={busy} onClick={() => save('deposit.save', { business_code: b.code, deposit_type: b.deposit_type, deposit_value: b.deposit_value, cancel_rules: rules, cancel_policy: text, ...(isOwner ? { hold_minutes: h } : {}) })}>บันทึก</button>
+      <button className="btnw dark" disabled={busy} onClick={() => save('deposit.save', { business_code: b.code, deposit_type: b.deposit_type, deposit_value: b.deposit_value, balance_days: b.balance_days, guide: b.guide, cancel_rules: rules, cancel_policy: text, ...(isOwner ? { hold_minutes: h } : {}) })}>บันทึก</button>
     </>
   );
 }
@@ -168,6 +172,7 @@ const PAY: [string, string, string][] = [
   ['promptpay_id', 'เลขพร้อมเพย์รับมัดจำ', 'เบอร์ 10 หลัก หรือเลข 13 หลัก'], ['account_name', 'ชื่อบัญชี (แสดงใต้ QR)', 'บจก. …'],
   ['liff_id', 'LIFF ID (จาก LINE Developers)', '2001234567-AbCdEfGh'],
   ['notify_email', 'อีเมลรับแจ้งจองใหม่ / สลิป (คั่น , ได้)', 'shop@example.com'], ['line_oa_id', 'LINE OA ID (ปุ่มแชทกับร้าน)', '@xxxx'], ['shop_phone', 'เบอร์ร้าน', '0xx-xxx-xxxx'],
+  ['shop_address', 'ที่อยู่ร้าน (หน้าติดต่อเจ้าหน้าที่)', 'เลขที่ ถนน ตำบล อำเภอ'], ['shop_map_url', 'ลิงก์ Google Maps', 'https://maps.app.goo.gl/…'],
 ];
 export function PaySettings({ values }: { values: Record<string, string> }) {
   const [v, setV] = useState(values);

@@ -1,3 +1,4 @@
+import Empty from '@/components/Empty';
 import Link from 'next/link';
 import { Fragment } from 'react';
 import { notFound } from 'next/navigation';
@@ -7,6 +8,7 @@ import { dayRows, isManager, nextAction } from '@/lib/admin';
 import { addDays, dowShort, thDate, todayTH } from '@/lib/thaidate';
 import Head from '@/components/admin/Head';
 import ActBtn from '@/components/admin/ActBtn';
+import CloseRound from '@/components/admin/CloseRound';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +39,14 @@ export default async function Biz({ params, searchParams }: { params: Promise<{ 
       and (k.start_at at time zone 'Asia/Bangkok')::date <= d::date and (k.end_at at time zone 'Asia/Bangkok')::date > d::date` : [];
   const [{ people }] = await sql`select exists (select 1 from units where business_code = ${code} and max_people is not null) as people`;
   const kind = b.booking_type === 'stay' ? (people ? 'villa' : 'rooms') : null;
+  // สระ: รอบวันนี้ (จองแล้ว/รับได้) + ปิดรอบฉุกเฉิน
+  const rounds = b.booking_type === 'session' ? await sql`
+    select s.code, to_char(s.start_time, 'HH24:MI') as a, to_char(s.end_time, 'HH24:MI') as z, s.capacity, s.size_rule,
+           s.capacity - session_left(s.code, (${today}::date + s.start_time) at time zone 'Asia/Bangkok') as booked,
+           is_closed(${code}, s.unit_code, s.code, ${today}::date) as closed
+    from pool_sessions s join units u on u.code = s.unit_code
+    where u.business_code = ${code} and s.active and u.active and extract(isodow from ${today}::date)::int = any (s.weekdays)
+    order by s.start_time` : [];
   return (
     <>
       <Head back="/admin/menu" cap={`วันนี้ · ${thDate(today)}`} title={b.name} />
@@ -57,8 +67,19 @@ export default async function Biz({ params, searchParams }: { params: Promise<{ 
           </Fragment>))}
         </div>
       )}
+      {b.booking_type === 'session' && <>
+        <div className="grp">รอบวันนี้<span>{rounds.length} รอบ</span></div>
+        {!rounds.length && <div className="note">วันนี้ไม่มีรอบ</div>}
+        {rounds.map((r) => (
+          <div key={r.code} className="row" style={{ alignItems: 'center' }}>
+            <span className="tm num">{r.a}</span>
+            <span className="t"><b className="num">{r.a}–{r.z}</b><small>{r.closed ? 'ปิดรอบแล้ว' : `จองแล้ว ${r.booked}/${r.capacity} ตัว`}</small></span>
+            {!r.closed && isManager(s) && <CloseRound biz={code} session={r.code} date={today} label={`${r.a}–${r.z}`} />}
+          </div>
+        ))}
+      </>}
       <div className="grp">ที่ยืนยันแล้ว<span>{rows.length} รายการวันนี้</span></div>
-      {!rows.length && <div className="note">ไม่มีการจองวันนี้</div>}
+      {!rows.length && <Empty icon="event" title="ยังไม่มีการจองที่ยืนยันแล้ว" text="การจองที่รอตรวจสลิปอยู่ในแท็บสลิป · ผ่านแล้วจะย้ายมาที่นี่" />}
       <div>
         {rows.map((r) => { const a = nextAction(r); return (
           <Link key={r.code + r.phase} href={`/admin/b/${r.order_code}`} className="row">

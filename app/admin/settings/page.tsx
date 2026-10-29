@@ -22,7 +22,7 @@ export default async function Settings() {
     ['ขายอะไร', [['bed', 'ห้อง Pet hotel', 'rooms', `${c.rooms} ห้อง`], ['cottage', 'หลัง Villa', 'villa', `${c.villas} หลัง`], ['pool', 'รอบสระ', 'pool', `${c.rounds} รอบ`], ['content_cut', 'ราคา Grooming', 'groom', `${c.groom} บริการ`]]],
     ['ราคาและกติกา', [['schedule', 'เวลาเปิดและวันหยุด', 'hours', c.closures ? `${c.closures} วันพิเศษ` : ''], ['gavel', 'มัดจำและยกเลิก', 'deposit']]],
     ['ขายเพิ่ม', [['shopping_cart', 'แนะนำข้ามบริการ', 'xsell', `${c.xsell} กฎ`], ['confirmation_number', 'บัตรสระและคูปอง', '', 'เฟส 2', true]]],
-    ['ร้านและคน', [['chat', 'ข้อความ LINE', 'msg'], ['account_balance', 'รับเงินและข้อมูลร้าน', 'pay'], ['group', 'พนักงานและสิทธิ์', 'staff', `${c.staff} คน`], ['store', 'สาขา', '', 'เฟส 2', true], ['bar_chart', 'รายงาน', '', 'เฟส 2', true]]],
+    ['ร้านและคน', [['chat', 'ข้อความ LINE', 'msg'], ['account_balance', 'รับเงินและข้อมูลร้าน', 'pay'], ['group', 'พนักงานและสิทธิ์', 'staff', `${c.staff} คน`], ['tune', 'การเชื่อมต่อบริการนอก', 'connect'], ['store', 'สาขา', '', 'เฟส 2', true], ['bar_chart', 'รายงาน', '', 'เฟส 2', true]]],
   ];
   return (
     <>

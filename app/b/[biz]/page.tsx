@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { getBizCatalog, getPets } from '@/lib/catalog';
 import { me } from '@/lib/me';
+import { creditBalance } from '@/lib/orders';
 import { todayTH } from '@/lib/thaidate';
 import BookingFlow from '@/components/BookingFlow';
 import Consent from '@/components/Consent';
@@ -16,10 +17,10 @@ export default async function BizPage({ params, searchParams }: { params: Promis
   if (!cat) notFound();
   const m = await me();
   if (m.code && !m.consented) return <Consent shop={cat.shop_name} />;
-  const pets = m.code ? await getPets(m.code) : [];
+  const [pets, credit] = m.code ? await Promise.all([getPets(m.code), creditBalance(m.code)]) : [[], 0];
   return (
     <LiffGate loggedIn={!!m.code}>
-      <BookingFlow cat={cat} pets={pets} loggedIn={!!m.code} today={todayTH()} initial={{ date: sp.date, service: sp.service }} />
+      <BookingFlow cat={cat} pets={pets} credit={credit} loggedIn={!!m.code} today={todayTH()} initial={{ date: sp.date, service: sp.service }} />
     </LiffGate>
   );
 }

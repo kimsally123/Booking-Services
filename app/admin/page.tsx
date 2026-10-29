@@ -1,3 +1,4 @@
+import Empty from '@/components/Empty';
 import Link from 'next/link';
 import { sql } from '@/lib/db';
 import { currentStaff } from '@/lib/staff';
@@ -51,6 +52,12 @@ export default async function Today({ searchParams }: { searchParams: Promise<{ 
           <span className="t"><b>วัคซีนรอตรวจ</b><small>{cnt.vaccines ? 'รอตรวจ' : 'ไม่มีค้าง'}</small></span>
           <span className="n num" style={{ color: cnt.vaccines ? undefined : 'var(--ink-3)' }}>{cnt.vaccines}</span><span className="ms go">chevron_right</span>
         </Link>
+        {cnt.refunds.map((r) => (
+          <Link key={r.code} href={`/admin/b/${r.code}`} className="li hot">
+            <span className="ms">currency_exchange</span>
+            <span className="t"><b>รอโอนคืน · {r.customer}</b><small>{r.code}</small></span>
+            <span className="n num">฿{Number(r.amount).toLocaleString('th-TH')}</span><span className="ms go">chevron_right</span>
+          </Link>))}
         <Link href="/admin/cal" className="li">
           <span className="ms">login</span>
           <span className="t"><b>เช็กอินวันนี้</b><small>{ciBiz || 'ไม่มี'}</small></span>
@@ -59,7 +66,7 @@ export default async function Today({ searchParams }: { searchParams: Promise<{ 
       </div>
 
       <div className="grp">ต่อจากนี้<span>{todo.length} รายการ</span></div>
-      {!todo.length && <div className="note">ไม่มีงานค้างวันนี้</div>}
+      {!todo.length && <Empty tone="green" icon="task_alt" title="ไม่มีงานค้างวันนี้" text="เช็กอิน รับกลับ และคิวที่ต้องทำจะขึ้นที่นี่ตามเวลา" />}
       <div>
         {todo.map((r) => { const L = look(r); const a = nextAction(r); return (
           <Link key={r.code + r.phase} href={`/admin/b/${r.order_code}`} className="row">

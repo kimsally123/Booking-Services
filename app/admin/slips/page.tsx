@@ -1,3 +1,4 @@
+import Empty from '@/components/Empty';
 import Link from 'next/link';
 import { sql } from '@/lib/db';
 import { canSee, currentStaff } from '@/lib/staff';
@@ -27,7 +28,7 @@ export default async function Slips() {
   return (
     <>
       <Head cap="ใบที่มีธงขึ้นก่อน" title="ตรวจสลิป" />
-      {!list.length && <div className="note">ไม่มีสลิปรอตรวจ</div>}
+      {!list.length && <Empty tone="green" icon="task_alt" title="ตรวจสลิปครบแล้ว" text="สลิปใหม่จะขึ้นที่นี่ทันทีที่ลูกค้าแนบ และแจ้งเตือนในแชทร้าน" />}
       <div>
         {list.map((r) => {
           const i = r.items[0]; const L = bizLook(i.biz, i.color, i.type);

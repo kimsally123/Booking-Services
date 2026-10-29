@@ -228,6 +228,8 @@ on conflict (prefix, day) do update set n = greatest(code_counters.n, excluded.n
 insert into code_counters (prefix, day, n)
 select 'PAY', '', max(split_part(code, '-', 2)::int) from payments where code ~ '^PAY-[0-9]+$' having count(*) > 0
 on conflict (prefix, day) do update set n = greatest(code_counters.n, excluded.n);""")
+    # Villa: ยอดคงเหลือก่อนเช็กอิน 7 วัน ถ้าใน Excel ยังไม่มีคอลัมน์ balance_days
+    print("update businesses set balance_days = 7 where code = 'villa' and balance_days is null;")
     print('commit;')
     n = {t: len(rows) for t, (_, _, rows) in data.items()}
     print('สร้าง seed แล้ว: ' + ' · '.join(f'{t} {c}' for t, c in n.items()), file=sys.stderr)

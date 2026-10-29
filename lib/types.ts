@@ -9,7 +9,8 @@ export interface Business {
   booking_type: BookingType;
   color: string | null;
   id_prefix: string;
-  deposit_type: 'full' | 'percent' | 'fixed';
+  deposit_type: 'full' | 'percent' | 'fixed' | 'first_night';
+  balance_days?: number | null;
   deposit_value: number | null;
   checkin_time: string | null;
   checkout_time: string | null;
@@ -117,14 +118,17 @@ export interface QuoteItem {
   lines: QuoteLine[];
   price: number;
   deposit: number;
+  balance: number;           // ส่วนที่ต้องจ่ายออนไลน์ก่อน balance_by (Villa) · ที่เหลือจ่ายที่ร้าน
+  balance_by: string | null;
   start_at: string; // timestamptz (+07)
   end_at: string;
 }
-export interface Quote { items: QuoteItem[]; total: number; due_now: number; pay_later: number }
+export interface Quote { items: QuoteItem[]; total: number; due_now: number; balance: number; balance_by: string | null; pay_later: number; credit_used?: number }
 
 export interface OrderView {
   code: string; status: 'holding' | 'pending_review' | 'paid' | 'cancelled' | 'expired';
-  total: number; due_now: number; hold_until: string | null; late: boolean;
+  total: number; due_now: number; paid_amount: number; hold_until: string | null; late: boolean;
+  refund_status: string | null; refund_amount: number; balance_due: number; balance_due_by: string | null; change_request: string | null;
   last_payment: { status: string; reason: string | null } | null;
   items: { code: string; business_code: string; biz: string; status: string; price: number; s: string; e: string; item: string; pets: string }[];
 }

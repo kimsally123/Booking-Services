@@ -8,6 +8,8 @@ import { TopBar } from './ui';
 type Order = OrderView;
 
 const pad = (n: number) => String(n).padStart(2, '0');
+const balanceMode = (o: Order) => o.status === 'paid' && Number(o.balance_due) > 0 && o.last_payment?.status !== 'pending';
+const remain = (o: Order) => balanceMode(o) ? Number(o.balance_due) : Math.round((Number(o.due_now) - Number(o.paid_amount || 0)) * 100) / 100;
 
 export default function PayBox({ order, qr, account, shop }: { order: Order; qr: string; account: string; shop: string }) {
   const router = useRouter();
@@ -33,39 +35,76 @@ export default function PayBox({ order, qr, account, shop }: { order: Order; qr:
     router.refresh();
   };
 
-  // บันทึก QR เป็นรูป PNG (ไว้เปิดสแกนในแอปธนาคาร)
-  const saveQr = () => {
+  // บันทึก QR เป็นรูปเดียวที่มียอด ชื่อบัญชี และรหัสการจอง (ไว้เปิดสแกนในแอปธนาคาร)
+  // มือถือ: เปิดเมนูแชร์ → "บันทึกรูปภาพ" · ไม่รองรับ (เช่นในแอป LINE บางรุ่น) = ดาวน์โหลด + บอกให้กดค้างที่รูป
+  const [tip, setTip] = useState('');
+  const saveQr = async () => {
     const img = new Image();
-    img.onload = () => {
-      const c = document.createElement('canvas'); c.width = 720; c.height = 720;
-      const g = c.getContext('2d')!; g.fillStyle = '#fff'; g.fillRect(0, 0, 720, 720); g.drawImage(img, 40, 40, 640, 640);
-      const a = document.createElement('a'); a.href = c.toDataURL('image/png'); a.download = `QR-${order.code}.png`; a.click();
-    };
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(qr);
+    img.src = qr;
+    await img.decode().catch(() => {});
+    const W = 720, H = 980, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d')!;
+    const font = getComputedStyle(document.body).fontFamily;
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.fillStyle = '#111'; g.textAlign = 'center';
+    g.font = `700 30px ${font}`; g.fillText(shop, W / 2, 70);
+    g.font = `800 64px ${font}`; g.fillText(baht(remain(order)), W / 2, 150);
+    g.drawImage(img, 80, 190, 560, 560);
+    g.font = `400 28px ${font}`; g.fillStyle = '#555';
+    if (account) g.fillText(`โอนเข้า ${account}`, W / 2, 810);
+    g.fillText(`รหัสการจอง ${order.code}`, W / 2, 860);
+    g.font = `400 22px ${font}`; g.fillText('สแกนด้วยแอปธนาคาร แล้วกลับมาแนบสลิป', W / 2, 920);
+    const blob: Blob | null = await new Promise((ok) => c.toBlob(ok, 'image/png'));
+    if (!blob) return;
+    const f = new File([blob], `QR-${order.code}.png`, { type: 'image/png' });
+    try {
+      if (navigator.canShare?.({ files: [f] })) { await navigator.share({ files: [f] }); return; }
+    } catch (e) { if ((e as Error).name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = f.name; a.click();
+    setTip('ถ้ารูปไม่ถูกบันทึก ให้กดค้างที่รูป QR แล้วเลือก "บันทึกรูปภาพ"');
   };
-  const expired = order.status === 'expired' || order.late || left === 0;
+  const bal = balanceMode(order);
+  const expired = !bal && (order.status === 'expired' || order.late || left === 0);
   const waiting = order.status === 'pending_review';
   const paid = order.status === 'paid';
+
+  // ส่งสลิปแล้ว → หน้าสำเร็จ พาไปดูการจอง
+  if (waiting || (paid && !bal && order.last_payment?.status === 'pending')) return (
+    <main className="app">
+      <TopBar title="ชำระเงิน" step={order.code} onBack={() => router.push('/me')} />
+      <div className="body" style={{ alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 12, minHeight: '70vh' }}>
+        <span className="empty-ic" style={{ width: 64, height: 64, borderRadius: 32, display: 'grid', placeItems: 'center', background: 'var(--amber-bg, #FDF5DC)' }}>
+          <span className="ms" style={{ fontSize: 32, color: '#8A5A00' }}>hourglass_top</span></span>
+        <b style={{ fontSize: 20, fontWeight: 800 }}>ส่งสลิปแล้ว</b>
+        <div className="sub" style={{ maxWidth: 260 }}>ร้านกำลังตรวจ · ผลจะแจ้งในแชท LINE</div>
+        <a className="btn" href={`/me/b/${order.code}`} style={{ minWidth: 220 }}>ดูการจองของฉัน</a>
+      </div>
+    </main>
+  );
 
   return (
     <main className="app">
       <TopBar title="ชำระเงิน" step={order.code} onBack={() => router.push('/me')} />
       <div className="body" style={{ alignItems: 'stretch' }}>
-        {paid && <div className="card on"><span className="ms ok">check</span><span className="t"><b>ยืนยันการจองแล้ว</b><small>ร้านตรวจสลิปเรียบร้อย</small></span></div>}
+        {bal && <div className="warn"><span className="ms">info</span>มัดจำผ่านแล้ว · ชำระยอดคงเหลือภายใน {order.balance_due_by ? thDate(order.balance_due_by) : 'ก่อนวันเข้าพัก'}</div>}
+        {paid && !bal && order.last_payment?.status === 'pending' && <div className="warn"><span className="ms">schedule</span>แนบสลิปยอดคงเหลือแล้ว รอร้านตรวจ</div>}
+        {paid && !bal && <div className="card on"><span className="ms ok">check</span><span className="t"><b>ยืนยันการจองแล้ว</b><small>ร้านตรวจสลิปเรียบร้อย</small></span></div>}
         {waiting && <div className="warn"><span className="ms">schedule</span>แนบสลิปแล้ว รอร้านตรวจ · ผลจะแจ้งในแชท LINE</div>}
         {expired && !waiting && !paid && <div className="err">หมดเวลากันที่แล้ว กรุณาจองใหม่</div>}
         {order.last_payment?.status === 'rejected' && order.status === 'holding' && (
           <div className="err">สลิปก่อนหน้าไม่ผ่าน: {order.last_payment.reason} · แนบสลิปใหม่ได้</div>
         )}
 
-        {order.status === 'holding' && !expired && (
+        {(order.status === 'holding' || bal) && !expired && (
           <>
             <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
               <div className="sub">สแกนจ่าย · {shop}</div>
-              <div className="num" style={{ fontSize: 36, fontWeight: 800 }}>{baht(order.due_now)}</div>
-              {left !== null && <div style={{ color: 'var(--red-ink)', fontSize: 14, fontWeight: 700 }}>กันที่ไว้ให้อีก {pad(Math.floor(left / 60))}:{pad(left % 60)} นาที</div>}
-              <div style={{ width: 230, height: 230, border: '2px solid var(--ink)', borderRadius: 16, padding: 10, background: '#fff' }}
-                   dangerouslySetInnerHTML={{ __html: qr || '<div style="display:grid;place-items:center;height:100%;color:#9a9a96">ร้านยังไม่ได้ตั้งเลขพร้อมเพย์</div>' }} />
+              <div className="num" style={{ fontSize: 36, fontWeight: 800 }}>{baht(remain(order))}</div>
+              {Number(order.paid_amount) > 0 && <div className="sub">ร้านได้รับแล้ว {baht(Number(order.paid_amount))} · โอนเพิ่มอีก {baht(remain(order))}</div>}
+              {left !== null && !bal && <div style={{ color: 'var(--red-ink)', fontSize: 14, fontWeight: 700 }}>กันที่ไว้ให้อีก {pad(Math.floor(left / 60))}:{pad(left % 60)} นาที</div>}
+              <div style={{ width: 230, height: 230, border: '2px solid var(--ink)', borderRadius: 16, padding: 10, background: '#fff', display: 'grid', placeItems: 'center' }}>
+                {qr ? <img src={qr} alt={`QR พร้อมเพย์ ${baht(remain(order))}`} style={{ width: '100%', height: '100%' }} />
+                    : <span style={{ color: '#9a9a96', fontSize: 14 }}>ร้านยังไม่ได้ตั้งเลขพร้อมเพย์</span>}
+              </div>
               {account && <div className="sub">โอนเข้า {account}</div>}
             </div>
             <ol className="sub" style={{ paddingLeft: 20 }}>
@@ -73,6 +112,7 @@ export default function PayBox({ order, qr, account, shop }: { order: Order; qr:
               <li>โอนยอดตามที่แสดง</li>
               <li>กลับมาแนบสลิปที่นี่</li>
             </ol>
+            {tip && <div className="warn"><span className="ms">info</span>{tip}</div>}
             {err && <div className="err">{err}</div>}
           </>
         )}
@@ -88,10 +128,10 @@ export default function PayBox({ order, qr, account, shop }: { order: Order; qr:
           {order.total > order.due_now && <div className="l"><span>จ่ายที่ร้าน</span><span className="num">{baht(order.total - order.due_now)}</span></div>}
         </div>
       </div>
-      {order.status === 'holding' && !expired && (
+      {(order.status === 'holding' || bal) && !expired && (
         <div className="bottombar"><div className="in">
           <input ref={file} type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
-          {qr && <button className="btn ghost" onClick={saveQr}><span className="ms">download</span>บันทึก QR</button>}
+          <button className="btn ghost" disabled={!qr} onClick={saveQr}><span className="ms">download</span>บันทึก QR</button>
           <button className="btn red" style={{ flex: 1 }} disabled={busy} onClick={() => file.current?.click()}>
             <span className="ms">upload</span>{busy ? 'กำลังส่ง…' : 'แนบสลิป'}
           </button>

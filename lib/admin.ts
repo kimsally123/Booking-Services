@@ -58,7 +58,11 @@ export async function pendingCounts(staff: StaffUser) {
     from payments p join bookings k on k.order_code = p.order_code
     where p.status = 'pending' and (${staff.role} = 'owner' or 'all' = any (${staff.businesses}::text[]) or k.business_code = any (${staff.businesses}::text[]))`;
   const [v] = await sql`select count(*)::int as n from pet_vaccines where status = 'pending'`;
-  return { slips: s.slips as number, flagged: s.flagged as number, vaccines: v.n as number };
+  // รอโอนคืน (ยกเลิก/หมดเวลาหลังได้เงินบางส่วน) · เฉพาะเจ้าของและผู้จัดการ
+  const refunds = staff.role === 'staff' ? [] : await sql<{ code: string; amount: string; customer: string }[]>`
+    select o.code, o.refund_amount::text as amount, c.display_name as customer from orders o join customers c on c.code = o.customer_code
+    where o.refund_status = 'pending' order by o.created_at limit 5`;
+  return { slips: s.slips as number, flagged: s.flagged as number, vaccines: v.n as number, refunds };
 }
 
 export const isManager = (s: StaffUser) => s.role === 'owner' || s.role === 'manager';

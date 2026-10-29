@@ -8,12 +8,16 @@ import Pool from '@/components/admin/set/Pool';
 import Groom from '@/components/admin/set/Groom';
 import { Deposit, Hours, Messages, PaySettings, Xsell } from '@/components/admin/set/Rules';
 import StaffAdmin from '@/components/StaffAdmin';
+import Connect from '@/components/admin/set/Connect';
+import RichMenu from '@/components/admin/set/RichMenu';
+import { liffId } from '@/lib/config';
+import { services } from '@/lib/connect';
 
 export const dynamic = 'force-dynamic';
 
 const TITLE: Record<string, string> = {
   rooms: 'ห้อง Pet hotel', villa: 'หลัง Villa', pool: 'รอบสระ', groom: 'ราคา Grooming', hours: 'เวลาเปิดและวันหยุด',
-  deposit: 'มัดจำและยกเลิก', xsell: 'แนะนำข้ามบริการ', msg: 'ข้อความ LINE', pay: 'รับเงินและข้อมูลร้าน', staff: 'พนักงานและสิทธิ์',
+  deposit: 'มัดจำและยกเลิก', xsell: 'แนะนำข้ามบริการ', msg: 'ข้อความ LINE', pay: 'รับเงินและข้อมูลร้าน', staff: 'พนักงานและสิทธิ์', connect: 'การเชื่อมต่อบริการนอก',
 };
 
 export default async function SettingPage({ params }: { params: Promise<{ k: string }> }) {
@@ -21,9 +25,9 @@ export default async function SettingPage({ params }: { params: Promise<{ k: str
   if (!s || !isManager(s)) return <div className="warn">เฉพาะเจ้าของและผู้จัดการ</div>;
   const { k } = await params;
   if (!TITLE[k]) notFound();
-  const ownerOnly = ['msg', 'pay', 'staff'].includes(k);
+  const ownerOnly = ['msg', 'pay', 'staff', 'connect'].includes(k);
   if (ownerOnly && s.role !== 'owner') return <><Head back="/admin/settings" cap="ตั้งค่าร้าน" title={TITLE[k]} /><div className="warn">เฉพาะเจ้าของร้าน</div></>;
-  const biz = (await sql`select code, name, color, booking_type, open_hours, closed_weekdays, checkin_time, checkout_time, deposit_type, deposit_value, cancel_rules, cancel_policy
+  const biz = (await sql`select code, name, color, booking_type, open_hours, closed_weekdays, checkin_time, checkout_time, deposit_type, deposit_value, balance_days, guide, cancel_rules, cancel_policy
                          from businesses where active order by sort`).filter((b) => canSee(s, b.code));
   let body: React.ReactNode = null;
 
@@ -85,6 +89,18 @@ export default async function SettingPage({ params }: { params: Promise<{ k: str
       sql`select code, name from businesses where active order by sort`,
     ]);
     body = <StaffAdmin me={s.code} staff={[...staff] as never} businesses={[...all] as never} />;
+  }
+  if (k === 'connect') {
+    const ym = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 7).replace('-', '');
+    const [svcs, rows, cals] = await Promise.all([
+      services(),
+      sql`select key, value from settings where key in ('ocr_enabled', 'ocr_month_limit', ${'ocr_used_' + ym})`,
+      sql`select code, name, calendar_id from businesses where active order by sort`,
+    ]);
+    const v = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    body = <Connect svcs={svcs} biz={[...cals] as never}
+      ocr={{ on: v.ocr_enabled !== 'off', limit: v.ocr_month_limit ?? '1000', used: Number(v['ocr_used_' + ym] ?? 0) }} />;
+    if (s.role === 'owner') body = <>{body}<RichMenu ready={!!process.env.LINE_CHANNEL_ACCESS_TOKEN && !!(await liffId())} /></>;
   }
   return (
     <>

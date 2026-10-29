@@ -9,7 +9,7 @@ export function Back() {
   return <button className="back" onClick={() => router.push('/me/account')}><span className="ms">arrow_back</span></button>;
 }
 
-export function ProfileForm({ c }: { c: { display_name: string; phone: string | null; email: string | null } }) {
+export function ProfileForm({ c }: { c: { display_name: string; phone: string | null; email: string | null; line: boolean } }) {
   const router = useRouter();
   const [f, setF] = useState({ display_name: c.display_name, phone: c.phone ?? '', email: c.email ?? '' });
   const [msg, setMsg] = useState('');
@@ -20,6 +20,7 @@ export function ProfileForm({ c }: { c: { display_name: string; phone: string | 
   };
   return (
     <>
+      <div className="li" style={{ padding: '10px 0' }}><span className="ms">chat</span><span className="t"><b>บัญชี LINE</b><small>{c.line ? 'เชื่อมแล้ว ✓' : 'ยังไม่ได้เชื่อม'}</small></span></div>
       <label className="cap">ชื่อที่ให้ร้านเรียก<input className="input" value={f.display_name} onChange={(e) => setF({ ...f, display_name: e.target.value })} /></label>
       <label className="cap">เบอร์โทร<input className="input" inputMode="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></label>
       <label className="cap">อีเมล (ไม่บังคับ)<input className="input" inputMode="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></label>

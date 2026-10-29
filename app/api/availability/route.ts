@@ -4,6 +4,7 @@ import { BookingError } from '@/lib/booking';
 import { CODE, DATE, fail } from '@/lib/api';
 import { sql } from '@/lib/db';
 import { monthAvailability } from '@/lib/calendar';
+import { currentCustomer } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,8 +43,12 @@ export async function GET(req: NextRequest) {
     if (type === 'slot') {
       const addons = (q.get('addons') || '').split(',').filter((x) => CODE.test(x));
       const tier = q.get('tier');
+      // pets = น้องของลูกค้าคนนี้เท่านั้น (ซ่อนเวลาที่น้องมีคิวอื่นแล้ว)
+      const want = (q.get('pets') || '').split(',').filter((x) => CODE.test(x)).slice(0, 8);
+      const who = want.length ? await currentCustomer() : null;
+      const pets = who ? (await sql`select code from pets where customer_code = ${who} and code in ${sql(want)}`).map((r) => r.code as string) : [];
       return NextResponse.json(await slotAvailability(biz, need('date', DATE), need('service', CODE), addons,
-        tier && CODE.test(tier) ? tier : null));
+        tier && CODE.test(tier) ? tier : null, pets));
     }
     throw new BookingError('bad_param', 'type ต้องเป็น month, stay, session หรือ slot');
   } catch (e) {

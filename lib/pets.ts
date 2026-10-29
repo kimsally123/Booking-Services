@@ -7,7 +7,7 @@ import { canSee, type StaffUser } from './staff';
 
 const VAX_TYPES = /^(image\/(jpeg|png|webp)|application\/pdf)$/;
 
-export async function addPet(customer: string, p: { name?: string; species?: string; breed?: string; weight_kg?: number; note?: string }) {
+export async function addPet(customer: string, p: { name?: string; species?: string; breed?: string; weight_kg?: number; note?: string; tags?: string[] }) {
   const name = (p.name || '').trim().slice(0, 40);
   const kg = Number(p.weight_kg);
   if (!name) throw new BookingError('bad_pet', 'กรอกชื่อน้อง');
@@ -16,8 +16,9 @@ export async function addPet(customer: string, p: { name?: string; species?: str
   const [{ n }] = await sql`select count(*)::int as n from pets where customer_code = ${customer}`;
   if (n >= 20) throw new BookingError('too_many', 'เพิ่มน้องได้สูงสุด 20 ตัว');
   const [{ c }] = await sql`select next_code('P') as c`;
-  await sql`insert into pets (code, customer_code, name, species, breed, weight_kg, note)
-            values (${c}, ${customer}, ${name}, ${species}, ${(p.breed || '').trim().slice(0, 40) || null}, ${kg}, ${(p.note || '').trim().slice(0, 120) || null})`;
+  const tags = Array.isArray(p.tags) ? p.tags.map((t) => String(t).trim().slice(0, 30)).filter(Boolean).slice(0, 12) : [];
+  await sql`insert into pets (code, customer_code, name, species, breed, weight_kg, note, tags)
+            values (${c}, ${customer}, ${name}, ${species}, ${(p.breed || '').trim().slice(0, 40) || null}, ${kg}, ${(p.note || '').trim().slice(0, 120) || null}, ${tags}::text[])`;
   return c as string;
 }
 

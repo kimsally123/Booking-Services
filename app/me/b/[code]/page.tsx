@@ -6,6 +6,7 @@ import { BOOK_ST, Pill } from '@/lib/status';
 import { bizLook } from '@/lib/look';
 import { sql } from '@/lib/db';
 import { CustScreen, requireCustomer } from '@/components/cust/Gate';
+import OrderRequest from '@/components/cust/OrderRequest';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,10 +56,14 @@ export default async function OrderDetail({ params }: { params: Promise<{ code: 
       })}
       <div className="bill">
         <div className="l"><span>รวม</span><span className="num">{baht(o.total)}</span></div>
-        <div className="l"><span>จ่ายแล้ว</span><span className="num">{baht(o.status === 'paid' ? o.due_now : 0)}</span></div>
-        {o.total > o.due_now && <div className="l"><span>จ่ายที่ร้าน</span><span className="num">{baht(o.total - o.due_now)}</span></div>}
+        <div className="l"><span>จ่ายแล้ว</span><span className="num">{baht(Number(o.paid_amount))}</span></div>
+        {Number(o.balance_due) > 0 && <div className="l"><span>ยอดคงเหลือ · ชำระก่อน {o.balance_due_by ? thDate(o.balance_due_by) : '-'}</span><span className="num">{baht(Number(o.balance_due))}</span></div>}
+        {o.total - Number(o.paid_amount) - Number(o.balance_due) > 0 && !['cancelled', 'expired'].includes(o.status) && <div className="l"><span>จ่ายที่ร้าน</span><span className="num">{baht(o.total - Number(o.paid_amount) - Number(o.balance_due))}</span></div>}
+        {o.refund_status && <div className="l"><span>{({ pending: 'ร้านกำลังโอนคืน', credited: 'คืนเป็นเครดิต', refunded: 'โอนคืนแล้ว', forfeited: 'ไม่ได้รับเงินคืนตามเงื่อนไข' } as Record<string, string>)[o.refund_status]}</span><span className="num">{Number(o.refund_amount) > 0 ? baht(Number(o.refund_amount)) : ''}</span></div>}
       </div>
-      {o.status === 'holding' && <Link href={`/pay/${o.code}`} className="btnw dark">จ่ายมัดจำ {baht(o.due_now)} · แนบสลิป</Link>}
+      {o.status === 'holding' && <Link href={`/pay/${o.code}`} className="btnw dark">จ่ายมัดจำ {baht(o.due_now - Number(o.paid_amount))} · แนบสลิป</Link>}
+      {o.status === 'paid' && Number(o.balance_due) > 0 && <Link href={`/pay/${o.code}`} className="btnw dark">ชำระยอดคงเหลือ {baht(Number(o.balance_due))}</Link>}
+      {['holding', 'pending_review', 'paid'].includes(o.status) && !used && <OrderRequest code={o.code} sent={o.change_request} />}
     </CustScreen>
   );
 }
