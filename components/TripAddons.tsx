@@ -10,7 +10,8 @@ export type Addon = { key: string; business: string; name: string; items: CartIt
 type Main = { kind: 'stay' | 'session' | 'slot'; from: string; to: string; date: string; nights: number; isVilla: boolean };
 type Grid = { start: string; free: { staff: string; staff_name: string }[]; pet_busy?: boolean }[];
 type SlotAv = { minutes: number; closed: boolean; grid: Grid };
-type SessAv = { code: string; start: string; end: string; left: number; free: boolean; reason: string | null };
+type SessAv = { code: string; start: string; end: string; size_rule: string; left: number; free: boolean; reason: string | null };
+const SIZE_TH: Record<string, string> = { small: 'น้องเล็ก ≤ 10 กก.', large: 'น้องใหญ่ 10 กก.+', all: 'ทุกขนาด' };
 type UnitAv = { code: string; free: boolean; reason: string | null };
 
 // วันที่เลือกไว้ให้ก่อน: Grooming = วันออก/วันที่จอง · สระ = วันที่สองของทริป · Pet hotel = ทั้งทริป
@@ -232,7 +233,7 @@ function AddonForm({ k, offer, pets, main, initial, onDone, onCancel }:
         {sess && !sess.length && <div className="sub" style={{ color: 'var(--red-ink)' }}>วันนี้ไม่มีรอบ</div>}
         {sess?.map((s) => { const ok = s.free && s.left >= chosen.length; return (
           <button key={s.code} className={'card' + (session === s.code ? ' on' : '')} disabled={!ok} onClick={() => setSession(s.code)} style={{ padding: 10 }}>
-            <span className="t"><b className="num">{s.start}–{s.end}</b></span><span className="p num" style={{ fontSize: 13 }}>{ok ? `เหลือ ${s.left} ที่` : s.reason ?? `เหลือ ${s.left} ที่`}</span>
+            <span className="t"><span className={'sizetag ' + s.size_rule}>{SIZE_TH[s.size_rule] ?? ''}</span><b className="num">{s.start}–{s.end}</b></span><span className="p num" style={{ fontSize: 13 }}>{ok ? `เหลือ ${s.left} ที่` : s.reason ?? `เหลือ ${s.left} ที่`}</span>
           </button>); })}
       </>}
 

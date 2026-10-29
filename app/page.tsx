@@ -1,5 +1,7 @@
 import Link from 'next/link';
-import { getCatalog } from '@/lib/catalog';
+import { getBizCatalog, getCatalog } from '@/lib/catalog';
+import { Photo } from '@/components/ui';
+import { baht } from '@/lib/thaidate';
 import { bizLook } from '@/lib/look';
 import { sql } from '@/lib/db';
 import { me } from '@/lib/me';
@@ -18,6 +20,9 @@ export default async function Home() {
     sql`select code from businesses where active and is_closed(code, null, null, (now() at time zone 'Asia/Bangkok')::date)`,
   ]);
   const closedToday = new Set(closedRows.map((r) => r.code as string));
+  // การ์ดที่พักเลื่อนข้าง: บ้านพักคน (Villa) แถวหนึ่ง · ห้องพักน้อง (Pet hotel) อีกแถว
+  const stays = (await Promise.all(cat.businesses.filter((b) => b.booking_type === 'stay')
+    .sort((a, z) => (a.code === 'villa' ? -1 : z.code === 'villa' ? 1 : 0)).map((b) => getBizCatalog(b.code)))).filter((x) => x && x.units.length);
   // การจองที่ยังไม่ถึงวัน/กำลังใช้ (ตามต้นแบบหน้าแรก)
   const now = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 16).replace('T', ' ');
   const upcoming = m.code ? (await myOrders(m.code)).filter((o) => ['holding', 'pending_review', 'paid'].includes(o.status)
@@ -43,6 +48,19 @@ export default async function Home() {
         </div>
         {upcoming.length > 0 && <div className="section" style={{ marginTop: 14, color: 'var(--ink-2)' }}>การจองของฉัน</div>}
         {upcoming.map((o) => <BookingCard key={o.code} o={o as never} biz={cat.businesses as never} />)}
+        {stays.map((sc) => { const b = sc!.business; return (
+          <section key={b.code} style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
+            <div className="section" style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--ink-2)' }}>
+              <span>{b.code === 'villa' ? 'บ้านพักสำหรับคน' : 'ห้องพักสำหรับน้อง'} · {b.name}</span>
+              <Link href={`/b/${b.code}`} style={{ fontSize: 13, textDecoration: 'underline' }}>จอง</Link>
+            </div>
+            <div className="hrow">{sc!.units.map((u) => (
+              <Link key={u.code} href={`/b/${b.code}/u/${u.code}`} className="hcard">
+                <Photo file={u.photos.find((p) => p.is_cover)?.file ?? u.photos[0]?.file} label={u.name} />
+                <span className="b"><b>{u.name}</b><small className="cap">{u.summary}</small>
+                  <span><small className="cap">เริ่ม </small><b className="num">{baht(Number(u.price))}</b><small className="cap">/คืน</small></span></span>
+              </Link>))}</div>
+          </section>); })}
       </CustScreen>
     </LiffGate>
   );

@@ -1,17 +1,18 @@
 import 'server-only';
+import { amountDue, qrUrl } from './qrlink';
 import type { TransactionSql } from 'postgres';
 import { sql } from './db';
-import { pushMessage } from './line';
+import { pushMessage, type LineMessage } from './line';
 import { emailReady, sendEmail } from './email';
 import { calendarReady, deleteEvent, eventId, insertEvent, patchEvent } from './gcal';
 import { baht, thDate } from './thaidate';
 import { flexCard, type Card } from './flex';
 import { appLink } from './config';
 
-type Tx = TransactionSql<{}>;
+export type Tx = TransactionSql<{}>;
 export type Template = 'paid' | 'slip_rejected' | 'reminder' | 'new_booking' | 'slip_review' | 'cancelled' | 'groom_done' | 'confirm'
   | 'vaccine_ok' | 'vaccine_rejected' | 'vaccine_review' | 'delete_request' | 'rescheduled'
-  | 'partial' | 'balance_due' | 'refund' | 'closed_day' | 'staff_new';
+  | 'partial' | 'balance_due' | 'refund' | 'closed_day' | 'staff_new' | 'booked' | 'slip_received';
 type Channel = 'line_push' | 'email' | 'calendar';
 
 // ใส่คิว (ในธุรกรรมเดียวกับการเปลี่ยนสถานะ) · ส่งจริงทีหลัง ส่งพลาดลองใหม่ได้
@@ -56,7 +57,7 @@ async function shopName() {
 
 // ร้านปิดข้อความบางแบบได้ที่ ตั้งค่า → ข้อความ LINE
 const MSG_KEY: Partial<Record<Template, string>> = {
-  paid: 'msg_paid', reminder: 'msg_reminder', slip_rejected: 'msg_slip_rejected', groom_done: 'msg_groom_done',
+  booked: 'msg_booked', slip_received: 'msg_slip_received', paid: 'msg_paid', reminder: 'msg_reminder', slip_rejected: 'msg_slip_rejected', groom_done: 'msg_groom_done',
   cancelled: 'msg_cancelled', vaccine_ok: 'msg_vaccine', vaccine_rejected: 'msg_vaccine', rescheduled: 'msg_rescheduled',
 };
 async function lineFor(j: Job, forEmail = false): Promise<{ to: string; text: string; card?: Card } | 'skip'> {
@@ -91,24 +92,33 @@ async function lineFor(j: Job, forEmail = false): Promise<{ to: string; text: st
   const payUrl = await appLink(`/pay/${c.code}`);
   const btn = (label: string, path?: string) => { const u = path ? payUrl : url; return u ? { label, url: u } : undefined; };
   const old = typeof j.payload.old === 'string' ? `${thDate(j.payload.old.slice(0, 10))} ${j.payload.old.slice(11, 16)}` : '';
+  const due = await amountDue(c.code);
+  const qr = due > 0 ? qrUrl(c.code, due) ?? undefined : undefined;
+  const [hold] = await sql`select to_char(hold_until at time zone 'Asia/Bangkok', 'HH24:MI') as t from orders where code = ${c.code} and hold_until is not null`;
   const T: Partial<Record<Template, [string, Card]>> = {
+    booked: [`${name}: รับการจองแล้ว · โอน ${baht(due)}${hold?.t ? ` ภายใน ${hold.t} น.` : ''} แล้วแนบสลิปที่ลิงก์\n${list}`,
+      { head: `${name} · รอโอน`, headColor: '#C77700', title: `โอน ${baht(due)}${hold?.t ? ` ภายใน ${hold.t} น.` : ''}`,
+        body: 'สแกน QR พร้อมเพย์ด้านล่าง แล้วกดแนบสลิป · ไม่ทันเวลาระบบจะปล่อยที่ให้คนอื่น', items,
+        rows: [['ยอดรวม', baht(Number(c.total))], ['โอนตอนนี้', baht(due)]], image: qr, button: btn('แนบสลิป', `/pay/${c.code}`) }],
+    slip_received: [`${name}: ได้รับสลิปแล้ว ร้านกำลังตรวจ · ผลจะแจ้งในแชทนี้\n${list}`,
+      { head: `${name} · ได้รับสลิป`, title: 'ได้รับสลิปแล้ว ⏳', body: 'ร้านกำลังตรวจ ผลจะแจ้งในแชทนี้', items, button: btn('ดูการจอง') }],
     paid: [j.payload.balance ? `${name}: ได้รับยอดคงเหลือแล้ว ชำระครบเรียบร้อย ✅\n${list}` : `${name}: ร้านตรวจสลิปแล้ว การจองยืนยันเรียบร้อย ✅\n${list}`,
       { head: `${name} · ${j.payload.balance ? 'ยอดคงเหลือ' : 'ยืนยันการจอง'}`, headColor: '#1E7B4A', title: j.payload.balance ? 'ชำระครบแล้ว ✅' : 'จองเรียบร้อย ✅', items,
         rows: [['ชำระแล้ว', baht(Number(c.paid_amount) || Number(c.due_now))], ...(Number(c.total) > Number(c.due_now) ? [['จ่ายที่ร้าน', baht(Number(c.total) - Number(c.due_now))] as [string, string]] : [])], button: btn('ดูการจอง') }],
     slip_rejected: [`${name}: สลิปยังไม่ผ่าน — ${j.payload.reason ?? ''}\nแนบสลิปใหม่ได้ที่เมนู "การจองของฉัน"\n${list}`,
       { head: `${name} · ตรวจสลิป`, headColor: '#B8262E', title: 'สลิปยังไม่ผ่าน', body: String(j.payload.reason ?? ''), items, button: btn('แนบสลิปใหม่', `/pay/${c.code}`) }],
-    reminder: [`${name}: เตือนการจองที่ใกล้ถึง ⏰\n${list}`,
-      { head: `${name} · เตือนก่อนถึงวัน`, title: 'ใกล้ถึงวันแล้ว ⏰', items, button: btn('ดูรายละเอียด') }],
+    reminder: (() => { const r = remindText(String(j.payload.when ?? 'day'), rows[0]); return [`${name}: ${r.title}\n${list}${r.tip ? '\n' + r.tip : ''}`,
+      { head: `${name} · ${r.head}`, title: r.title, body: r.tip, items, button: btn('ดูรายละเอียด') }] as [string, Card]; })(),
     cancelled: [`${name}: ยกเลิกการจองแล้ว${j.payload.reason ? ' — ' + j.payload.reason : ''}\n${list}\nเรื่องเงินมัดจำเป็นไปตามเงื่อนไขการยกเลิก ทักแชทร้านได้`,
       { head: `${name} · ยกเลิกการจอง`, headColor: '#B8262E', title: 'ยกเลิกการจองแล้ว', body: `${j.payload.reason ? j.payload.reason + ' · ' : ''}เงินมัดจำเป็นไปตามเงื่อนไขการยกเลิก ทักแชทร้านได้`, items }],
     groom_done: [`${name}: ${rows[0]?.pets || 'น้อง'} อาบน้ำ/แต่งขนเสร็จแล้ว 🐾 มารับได้เลย`,
       { head: `${name} · Grooming`, headColor: '#E8444C', title: `${rows[0]?.pets || 'น้อง'} พร้อมกลับบ้านแล้ว 🐾`, body: 'อาบน้ำ/แต่งขนเสร็จแล้ว มารับได้เลย', items }],
     partial: [`${name}: ได้รับเงิน ${baht(Number(j.payload.got ?? 0))} แล้ว · ยังขาดอีก ${baht(Number(j.payload.left ?? 0))}\nโอนเพิ่มแล้วแนบสลิปได้ที่เมนู "การจองของฉัน"\n${list}`,
       { head: `${name} · ตรวจสลิป`, headColor: '#C77700', title: `ยังขาดอีก ${baht(Number(j.payload.left ?? 0))}`,
-        body: `ร้านได้รับ ${baht(Number(j.payload.got ?? 0))} แล้ว · โอนส่วนที่ขาดแล้วแนบสลิปใหม่`, items, button: btn('โอนส่วนที่ขาด', `/pay/${c.code}`) }],
+        body: `ร้านได้รับ ${baht(Number(j.payload.got ?? 0))} แล้ว · โอนส่วนที่ขาดแล้วแนบสลิปใหม่`, items, image: qr, button: btn('โอนส่วนที่ขาด', `/pay/${c.code}`) }],
     balance_due: [`${name}: เตือนชำระยอดคงเหลือ ${baht(Number(c.balance_due))} ก่อน ${c.balance_due_by ? thDate(c.balance_due_by) : 'วันเข้าพัก'}\n${list}`,
       { head: `${name} · ยอดคงเหลือ`, headColor: '#C77700', title: `ชำระอีก ${baht(Number(c.balance_due))}`,
-        body: `ภายใน ${c.balance_due_by ? thDate(c.balance_due_by) : 'ก่อนวันเข้าพัก'}`, items, button: btn('ชำระยอดคงเหลือ', `/pay/${c.code}`) }],
+        body: `ภายใน ${c.balance_due_by ? thDate(c.balance_due_by) : 'ก่อนวันเข้าพัก'}`, items, image: qr, button: btn('ชำระยอดคงเหลือ', `/pay/${c.code}`) }],
     refund: [`${name}: ${refundText(c)}\n${list}`,
       { head: `${name} · คืนเงิน`, title: refundText(c), items, button: btn('ดูการจอง') }],
     closed_day: [`${name}: ขออภัย ร้านปิดในวันที่คุณจองไว้${j.payload.reason ? ' (' + j.payload.reason + ')' : ''}\n${list}\nร้านจะติดต่อเรื่องเลื่อนวันหรือคืนเงินเต็มจำนวน`,
@@ -121,6 +131,23 @@ async function lineFor(j: Job, forEmail = false): Promise<{ to: string; text: st
   return { to: c.line_user_id ?? '', text: m[0], card: m[1] };
 }
 const NO_LINE = 'ลูกค้าไม่มี LINE userId';
+
+// ข้อความเตือนตามประเภทธุรกิจ · when: day = ก่อน 1 วัน · today = เช้าวันเข้าพัก · soon = ก่อนถึงเวลา
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function remindText(when: string, r: any): { head: string; title: string; tip?: string } {
+  const t = r?.t ? String(r.t).slice(0, 5) : '';
+  const type = r?.booking_type, biz = r?.business_code;
+  if (type === 'stay') {
+    const pet = biz === 'pet_hotel', w = pet ? 'รับฝากน้อง' : 'เช็กอิน';
+    return when === 'today'
+      ? { head: `วันนี้${w}`, title: `วันนี้${w} ${t} น.`, tip: pet ? 'อย่าลืมสมุดวัคซีน อาหาร และของใช้ประจำตัวน้อง' : 'ทักแชทร้านได้ถ้าจะถึงช้ากว่าเวลา' }
+      : { head: `พรุ่งนี้${w}`, title: `พรุ่งนี้${w} ${t} น.`, tip: pet ? 'เตรียมสมุดวัคซีนและของใช้ประจำตัวน้อง' : undefined };
+  }
+  const what = type === 'session' ? 'รอบสระ' : 'คิว Grooming';
+  return when === 'soon'
+    ? { head: `ใกล้ถึง${what}`, title: `อีกไม่นานถึง${what} ${t} น.`, tip: type === 'slot' ? 'พาน้องมาก่อนเวลาสัก 10 นาทีนะ' : undefined }
+    : { head: `พรุ่งนี้มี${what}`, title: `พรุ่งนี้${what} ${t} น.`, tip: 'ติดธุระ ทักแชทร้านเพื่อเลื่อนได้' };
+}
 
 // แจ้งพนักงานใน LINE (สลิปรอตรวจ) · เฉพาะพนักงานที่ผูก LINE แล้วและเห็นธุรกิจนั้น
 async function staffPush(j: Job): Promise<'sent' | 'skip'> {
@@ -149,6 +176,8 @@ async function staffPush(j: Job): Promise<'sent' | 'skip'> {
 function stillTrue(t: Template, order: string, bookings: string[]): boolean {
   const live = bookings.some((b) => !['cancelled', 'expired'].includes(b));
   switch (t) {
+    case 'booked': return order === 'holding' && live;
+    case 'slip_received': return ['pending_review', 'paid'].includes(order) && live;
     case 'paid': return order === 'paid' && live;
     case 'reminder': return order === 'paid' && bookings.includes('confirmed');
     case 'slip_rejected': case 'partial': return order === 'holding';
@@ -287,4 +316,30 @@ export async function sendDue(limit = 20, onlyId?: number): Promise<{ sent: numb
     }
   }
   return { sent, failed, skipped };
+}
+
+// ---------- การ์ดสถานะการจอง (ตอบเมื่อลูกค้าส่งรหัสการจองเข้าแชท) ----------
+const ST_HEAD: Record<string, [string, string, string]> = {
+  holding: ['รอโอน', '#C77700', 'รอโอนมัดจำ'], pending_review: ['รอร้านตรวจ', '#C77700', 'ได้รับสลิปแล้ว · ร้านกำลังตรวจ ⏳'],
+  paid: ['ยืนยันแล้ว', '#1E7B4A', 'ยืนยันการจองแล้ว ✅'], cancelled: ['ยกเลิก', '#B8262E', 'การจองนี้ยกเลิกแล้ว'], expired: ['หมดเวลา', '#9A9A96', 'หมดเวลาโอน · จองใหม่ได้'],
+};
+export async function statusMessage(orderCode: string): Promise<LineMessage | null> {
+  const [o] = await sql`select code, status, total, due_now, paid_amount, balance_due, balance_due_by::text as by,
+                               to_char(hold_until at time zone 'Asia/Bangkok', 'HH24:MI') as hold from orders where code = ${orderCode}`;
+  if (!o) return null;
+  const name = await shopName();
+  const rows = (await bookingsOf({ order_code: o.code, booking_code: null } as unknown as Job))
+    .filter((r) => ['cancelled', 'expired'].includes(o.status) || !['cancelled', 'expired'].includes(r.status));
+  const items = rows.map((r) => ({ business: r.business_code, color: r.color, type: r.booking_type, biz: `${r.biz} · ${r.code}`, title: `${r.item}${r.pets ? ' · ' + r.pets : ''}`, when: `${thDate(r.d)} · ${r.t}` }));
+  const [lab, color, title] = ST_HEAD[o.status] ?? [o.status, '#111111', o.status];
+  const due = await amountDue(o.code);
+  const money: [string, string][] = [['ยอดรวม', baht(Number(o.total))], ['ชำระแล้ว', baht(Number(o.paid_amount))]];
+  if (o.status === 'holding') money.push(['ต้องโอน', baht(due)]);
+  if (o.status === 'paid' && Number(o.balance_due) > 0) money.push([`ยอดคงเหลือ · ก่อน ${o.by ? thDate(o.by) : 'วันเข้าพัก'}`, baht(Number(o.balance_due))]);
+  const url = await appLink(o.status === 'holding' || due > 0 ? `/pay/${o.code}` : `/me/b/${o.code}`);
+  const card: Card = { head: `${name} · ${o.code} · ${lab}`, headColor: color,
+    title: o.status === 'holding' && o.hold ? `${title} ภายใน ${o.hold} น.` : title, items, rows: money,
+    image: due > 0 ? qrUrl(o.code, due) ?? undefined : undefined,
+    button: url ? { label: due > 0 ? 'แนบสลิป' : 'ดูการจอง', url } : undefined };
+  return { type: 'flex', altText: `${name}: ${o.code} · ${title}`.slice(0, 380), contents: flexCard(card) } as LineMessage;
 }

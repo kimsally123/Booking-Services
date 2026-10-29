@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import { verifyIdToken } from '@/lib/line';
 import { setStaffCookie } from '@/lib/session';
+import { linkStaffMenu } from '@/lib/richmenu';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +14,9 @@ export async function POST(req: NextRequest) {
     const u = await verifyIdToken(b.idToken);
     const [{ code }] = await sql`select staff_accept(${b.token}, ${u.sub}) as code`;
     await setStaffCookie(code);
-    return NextResponse.json({ ok: true });
+    // เปลี่ยนริชเมนูในแชทของคนนี้เป็นเมนูพนักงาน (ยังไม่ได้ติดตั้งริชเมนู = ข้าม)
+    const menu = await linkStaffMenu(u.sub).catch((err) => { console.error('staff menu', (err as Error).message); return false; });
+    return NextResponse.json({ ok: true, menu });
   } catch (e) {
     const m = (e as Error).message || '';
     const dup = (e as { code?: string }).code === '23505';

@@ -34,13 +34,13 @@ export default async function BizInfo({ params, searchParams }: { params: Promis
       </div>
 
       {!rules && b.booking_type === 'stay' && cat.units.map((u) => (
-        <div key={u.code} className="card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
-          <b style={{ fontSize: 15 }}>{u.name}</b>
+        <Link key={u.code} href={`/b/${biz}/u/${u.code}`} className="card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
+          <b style={{ fontSize: 15 }}>{u.name} <span className="ms go" style={{ float: 'right' }}>chevron_right</span></b>
           {u.summary && <span className="cap">{u.summary}</span>}
           <span><b className="num">{baht(u.price)}</b> / คืน{u.weekend_price ? <> · ศ.–ส. <b className="num">{baht(u.weekend_price)}</b></> : null}</span>
           {u.pet_fee ? <span className="cap">พาน้องมาด้วย +{baht(u.pet_fee)} / ตัว / คืน</span> : null}
           {u.max_pet_kg ? <span className="cap">รับน้องไม่เกิน {u.max_pet_kg} กก.</span> : null}
-        </div>))}
+        </Link>))}
 
       {!rules && b.booking_type === 'session' && cat.sessions.map((s) => (
         <div key={s.code} className="card" style={{ justifyContent: 'space-between' }}>

@@ -29,3 +29,15 @@ export async function pushMessage(to: string, messages: LineMessage[]): Promise<
   });
   if (!r.ok) throw new Error(`LINE push ${r.status}: ${(await r.text()).slice(0, 200)}`);
 }
+
+// ตอบกลับ (reply ไม่ใช้โควตา) · ใช้ตอบข้อความที่ลูกค้าส่งเข้าแชท ภายในไม่กี่วินาที
+export async function replyMessage(replyToken: string, messages: LineMessage[]): Promise<void> {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token) throw new Error('ยังไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN');
+  const r = await fetch(`${process.env.LINE_API_BASE || 'https://api.line.me'}/v2/bot/message/reply`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ replyToken, messages: messages.slice(0, 5) }),
+  });
+  if (!r.ok) throw new Error(`LINE reply ${r.status}: ${(await r.text()).slice(0, 200)}`);
+}

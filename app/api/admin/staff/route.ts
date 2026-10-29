@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 import { currentStaff } from '@/lib/staff';
 import { appUrl, liffId } from '@/lib/config';
+import { unlinkStaffMenu } from '@/lib/richmenu';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +33,9 @@ export async function POST(req: NextRequest) {
   }
   if (b.action === 'remove') {
     if (code === me.code) return NextResponse.json({ message: 'ลบตัวเองไม่ได้' }, { status: 400 });
+    const [old] = await sql`select line_user_id from staff where code = ${code}`;
     await sql`update staff set invite_status = 'removed', line_user_id = null, invite_token_hash = null where code = ${code}`;
+    if (old?.line_user_id) await unlinkStaffMenu(old.line_user_id);   // กลับไปเห็นเมนูลูกค้า
     return NextResponse.json({ ok: true });
   }
   return NextResponse.json({ message: 'คำสั่งไม่ถูกต้อง' }, { status: 400 });

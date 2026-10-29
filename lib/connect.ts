@@ -13,6 +13,8 @@ export async function services(): Promise<Svc[]> {
   const list: Omit<Svc, 'ready' | 'missing'>[] = [
     { name: 'LINE ส่งข้อความ', what: 'ส่งการ์ดยืนยัน เตือนนัด ผลสลิป ให้ลูกค้าในแชท', env: ['LINE_CHANNEL_ACCESS_TOKEN'],
       without: 'ไม่ส่งข้อความ LINE (ข้อความค้างในคิว ส่งให้เองเมื่อใส่ key)' },
+    { name: 'LINE ตอบรหัสการจอง (webhook)', what: 'ลูกค้าส่งรหัสการจองเข้าแชท แล้วได้การ์ดสถานะกลับ (reply ไม่ใช้โควตา)', env: ['LINE_CHANNEL_SECRET', 'LINE_CHANNEL_ACCESS_TOKEN'],
+      without: 'ส่งรหัสเข้าแชทแล้วไม่มีการ์ดตอบ · ตั้ง Webhook URL เป็น <โดเมน>/api/line/webhook' },
     { name: 'LINE ล็อกอิน (LIFF)', what: 'ลูกค้าเปิดหน้าจองใน LINE แล้วล็อกอินอัตโนมัติ', env: [],
       without: 'เปิดหน้าจองนอก LINE ได้แต่จองไม่ได้ (ยกเว้นโหมดเดโม่)' },
     { name: 'อีเมลแจ้งร้าน (Resend)', what: 'อีเมลแจ้งจองใหม่ สลิปรอตรวจ คำขอลบข้อมูล', env: ['EMAIL_API_KEY', 'EMAIL_FROM'],

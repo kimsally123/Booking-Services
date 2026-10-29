@@ -11,7 +11,7 @@ import ActBtn from '@/components/admin/ActBtn';
 export const dynamic = 'force-dynamic';
 
 // หลังบ้าน · วันนี้: งานถัดไป · รอคุณจัดการ · ต่อจากนี้
-export default async function Today({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
+export default async function Today({ searchParams }: { searchParams: Promise<{ date?: string; welcome?: string }> }) {
   const s = await currentStaff();
   if (!s) return null;
   const sp = await searchParams;
@@ -30,6 +30,7 @@ export default async function Today({ searchParams }: { searchParams: Promise<{ 
   return (
     <>
       <Head cap={`${thDate(date)} · ${shop?.value ?? ''}`} title={date === today ? 'วันนี้' : thDate(date)} />
+      {sp.welcome && <div className="note y">ยินดีต้อนรับ {s.display_name} · {sp.welcome === 'menu' ? 'ปิดหน้านี้แล้วกลับไปที่แชทร้าน เมนูด้านล่างเปลี่ยนเป็นเมนูพนักงานแล้ว' : 'ผูก LINE เรียบร้อย · เมนูพนักงานจะขึ้นในแชทหลังร้านกดติดตั้งริชเมนู'}</div>}
       {nxt && (() => { const L = look(nxt); const a = nextAction(nxt)!; return (
         <Link href={`/admin/b/${nxt.order_code}`} className="next">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

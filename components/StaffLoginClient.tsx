@@ -21,7 +21,7 @@ export default function StaffLoginClient({ liffId, mode, token }: { liffId: stri
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) { setErr(true); setMsg(j.message || 'เข้าสู่ระบบไม่สำเร็จ'); return; }
-        if (mode === 'join') router.replace('/admin'); else router.refresh();
+        if (mode === 'join') router.replace(j.menu ? '/admin?welcome=menu' : '/admin?welcome=1'); else router.refresh();
       } catch (e) {
         setErr(true); setMsg((e as Error).message || 'เข้าสู่ระบบไม่สำเร็จ');
       }

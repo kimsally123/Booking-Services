@@ -1,11 +1,12 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { BizCatalog, CartItem, Pet, Quote } from '@/lib/types';
+import type { BizCatalog, CartItem, Pet, Quote, Unit } from '@/lib/types';
 import { addDays, baht, daysBetween, isoDow, thDate, thDay } from '@/lib/thaidate';
 import { BottomBar, Photo, Progress, Stepper, Tick, TopBar } from './ui';
 import Calendar, { type Cell, type Mark } from './Calendar';
 import TripAddons, { type Addon } from './TripAddons';
+import UnitDetail from './UnitDetail';
 import { BOOK_AHEAD_MONTHS, lastBookable, maxNights } from '@/lib/rules';
 import { clearTrip, loadTrip, saveTrip, type TripEntry } from '@/lib/trip';
 import { bizLook } from '@/lib/look';
@@ -48,7 +49,7 @@ function useFetch<T>(url: string | null, body?: unknown): Avail<T> {
 }
 
 export default function BookingFlow({ cat, pets, loggedIn, today, initial, credit = 0 }:
-  { cat: BizCatalog; pets: Pet[]; loggedIn: boolean; today: string; initial?: { date?: string; service?: string }; credit?: number }) {
+  { cat: BizCatalog; pets: Pet[]; loggedIn: boolean; today: string; initial?: { date?: string; service?: string; unit?: string }; credit?: number }) {
   const router = useRouter();
   const b = cat.business;
   const forPeople = cat.units.some((u) => u.max_people);              // Villa = ที่พักคน
@@ -74,7 +75,8 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial, credi
   const [guests, setGuests] = useState(2);
   // น้องที่เลือก · Grooming เลือกตัวแรกไว้ให้ (1 คิวต่อ 1 ตัว)
   const [sel, setSel] = useState<string[]>(b.booking_type === 'slot' && pets[0] ? [pets[0].code] : []);
-  const [unit, setUnit] = useState<string | null>(null);
+  const [unit, setUnit] = useState<string | null>(initial?.unit && cat.units.some((u) => u.code === initial.unit) ? initial.unit : null);
+  const [detail, setDetail] = useState<Unit | null>(null);   // เปิดดูรายละเอียดห้อง/บ้าน
   const [date, setDate] = useState<string | null>(b.booking_type === 'stay' ? null : start);
   const [session, setSession] = useState<string | null>(null);
   const [service, setService] = useState<string | null>(initial?.service && mains.some((m) => m.code === initial.service) ? initial.service : null);
@@ -170,6 +172,8 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial, credi
     for (let d = from; d < to; d = addDays(d, 1)) t += nightPrice(u, d);
     return t + (u.pet_fee ? Number(u.pet_fee) * sel.length * nights : 0);
   };
+  const isFreeUnit = (code: string) => !!from && !!to && freeRange(from, to).some((u) => u.code === code) && !!unitAv.data?.units.find((x) => x.code === code)?.free;
+  const totalOf = (u: Unit) => stayTotal({ price: Number(u.price), weekend_price: u.weekend_price === null ? null : Number(u.weekend_price), pet_fee: u.pet_fee });
   const calendar = (cell: (d: string) => Cell, mark: (d: string) => Mark, onPick: (d: string) => void, focus: string | null) => (
     <>
       {month.error && <div className="err">{month.error}</div>}
@@ -362,6 +366,7 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial, credi
                   <small>{u.summary}</small>
                   {why && <small style={{ color: 'var(--red-ink)' }}>{why}</small>}
                   {u.pet_fee && sel.length > 0 ? <small>รวมค่าน้อง {baht(Number(u.pet_fee))}/ตัว/คืน</small> : null}
+                  <span className="more" role="link" onClick={(e) => { e.stopPropagation(); setDetail(u); }}>ดูรายละเอียดและรูป</span>
                 </span>
                 <span className="p num">{baht(total)}<small>รวม {nights} คืน</small></span>
               </div>
@@ -382,7 +387,7 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial, credi
         {sessAv.data && !open.length && <div className="warn"><span className="ms">info</span>วันนี้ไม่มีรอบ</div>}
         {sessAv.data?.sessions.map((x) => (
           <button key={x.code} className={'card' + (session === x.code ? ' on' : '')} disabled={!x.free} onClick={() => setSession(x.code)}>
-            <span className="t"><b className="num">{x.start}–{x.end}</b><small>{SIZE_TH[x.size_rule]}</small></span>
+            <span className="t"><span className={'sizetag ' + x.size_rule}>{SIZE_TH[x.size_rule]}</span><b className="num">{x.start}–{x.end}</b></span>
             <span className="p num" style={{ fontSize: 14 }}>{x.free ? `เหลือ ${x.left} ที่` : x.reason}</span>
           </button>
         ))}
@@ -508,6 +513,12 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial, credi
   );
 
   const last = step === 'summary';
+  if (detail) {
+    const ok = step === 'unit' && isFreeUnit(detail.code);
+    return <UnitDetail biz={b} unit={detail} onBack={() => setDetail(null)}
+      action={step === 'unit' ? { label: ok ? `เลือก${word}นี้` : 'ไม่ว่างช่วงนี้', sub: `${nights} คืน`, price: ok ? baht(totalOf(detail)) : undefined,
+        onClick: () => { if (ok) { setUnit(detail.code); setDetail(null); } } } : undefined} />;
+  }
   return (
     <main className="app">
       <TopBar title={b.booking_type === 'stay' && !forPeople ? b.tagline : `จอง ${b.name}`} step={`ขั้น ${i + 1}/${steps.length}`} onBack={() => go(-1)} />

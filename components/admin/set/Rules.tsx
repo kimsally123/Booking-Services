@@ -148,11 +148,13 @@ export function Xsell({ rules, biz }: { rules: X[]; biz: B[] }) {
 // ---------- ข้อความ LINE · รับเงินและข้อมูลร้าน ----------
 const MSG: [string, string, string][] = [
   ['msg_paid', 'ยืนยันการจอง', 'ทันทีหลังสลิปผ่าน'], ['msg_reminder', 'เตือนก่อนถึงวัน', 'ตามเวลาที่ตั้ง'], ['msg_slip_rejected', 'สลิปไม่ผ่าน', 'ทันที · พร้อมเหตุผล'],
+  ['msg_booked', 'รับการจอง + QR พร้อมเพย์', 'ทันทีที่ลูกค้ากดจอง'], ['msg_slip_received', 'ได้รับสลิปแล้ว', 'ทันทีที่ลูกค้าแนบสลิป'],
   ['msg_groom_done', 'น้องพร้อมกลับ', 'เมื่อช่างกดเสร็จ'], ['msg_rescheduled', 'เลื่อนวัน', 'เมื่อร้านเลื่อนวันให้'], ['msg_cancelled', 'ยกเลิกการจอง', 'เมื่อร้านกดยกเลิก'], ['msg_vaccine', 'ผลตรวจวัคซีน', 'เมื่อร้านตรวจเสร็จ'],
 ];
 export function Messages({ values }: { values: Record<string, string> }) {
   const [v, setV] = useState(values);
-  const [hrs, setHrs] = useState(values.remind_hours_before ?? '24');
+  const [dayAt, setDayAt] = useState(values.remind_day_at ?? '18:00');
+  const [soon, setSoon] = useState(values.remind_soon_min ?? '60');
   const { save, Msg } = useSave();
   const set = (k: string, on: boolean) => { const n = { ...v, [k]: on ? 'on' : 'off' }; setV(n); save('settings.save', { values: { [k]: n[k] } }, on ? 'เปิดข้อความแล้ว' : 'ปิดข้อความแล้ว'); };
   return (
@@ -161,7 +163,11 @@ export function Messages({ values }: { values: Record<string, string> }) {
       {MSG.map(([k, t, s]) => (
         <div key={k} className="row"><span className="t"><b>{t}</b><small>{s}</small></span><Switch on={v[k] !== 'off'} onChange={(on) => set(k, on)} /></div>
       ))}
-      <label className="cap">เตือนก่อนถึงวันกี่ชั่วโมง<input className="input num" inputMode="numeric" value={hrs} onChange={(e) => setHrs(e.target.value)} onBlur={() => save('settings.save', { values: { remind_hours_before: hrs } })} /></label>
+      <div className="grp">เตือนก่อนมา (ใช้กับทุกธุรกิจ)</div>
+      <div className="row"><span className="t"><b>เตือนก่อน 1 วัน</b><small>พรุ่งนี้เช็กอิน / พรุ่งนี้มีรอบสระ / พรุ่งนี้นัด Grooming</small></span><Switch on={v.remind_day_before !== 'off'} onChange={(on) => set('remind_day_before', on)} /></div>
+      <label className="cap">ส่งเตือนก่อน 1 วัน เวลา<input className="input num" type="time" value={dayAt} onChange={(e) => setDayAt(e.target.value)} onBlur={() => save('settings.save', { values: { remind_day_at: dayAt } })} /></label>
+      <label className="cap">สระ / Grooming: เตือนก่อนถึงเวลากี่นาที (0 = ไม่เตือน)<input className="input num" inputMode="numeric" value={soon} onChange={(e) => setSoon(e.target.value)} onBlur={() => save('settings.save', { values: { remind_soon_min: soon } })} /></label>
+      <div className="cap">ที่พัก (Pet hotel / Villa): เตือนเช้าวันเข้าพัก 09:00 อีกครั้ง</div>
       <div className="note">ข้อความใช้โควตาข้อความของ LINE OA ร่วมกันทั้ง 4 ธุรกิจ · ปิดข้อความที่ไม่จำเป็นได้ · แชทพูดคุยปกติไม่นับโควตา</div>
     </>
   );

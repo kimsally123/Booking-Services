@@ -1,7 +1,7 @@
 import 'server-only';
 import { sql } from './db';
 import { BookingError, quote } from './booking';
-import { enqueue, sendDue } from './notify';
+import { enqueue, sendDue, type Tx } from './notify';
 import { imageType, putFile } from './storage';
 import { baht, todayTH } from './thaidate';
 import { checkSlip } from './slip';
@@ -29,6 +29,32 @@ function dbError(e: unknown): never {
 async function setting(key: string, fallback: string) {
   const [r] = await sql`select value from settings where key = ${key}`;
   return r?.value ?? fallback;
+}
+
+
+// ---------- ตั้งเวลาเตือน (ตามแบบระบบ Google Sheet: ก่อน 1 วัน + ก่อนถึงเวลา) ----------
+// ที่พัก: เย็นวันก่อน (เช็กอินพรุ่งนี้) + เช้าวันเข้า 09:00 · สระ/Grooming: เย็นวันก่อน + ก่อนเวลา X นาที
+const toDate = (v: string | Date) => v instanceof Date ? v : new Date(String(v).replace(' ', 'T').replace(/\+07$/, '+07:00'));
+export async function queueReminders(tx: Tx, booking: string, start: string | Date) {
+  const [cfg] = await tx`select coalesce(max(value) filter (where key = 'remind_day_before'), 'on') as day,
+                                coalesce(max(value) filter (where key = 'remind_day_at'), '18:00') as at,
+                                coalesce(max(value) filter (where key = 'remind_soon_min'), '60') as soon
+                         from settings where key in ('remind_day_before', 'remind_day_at', 'remind_soon_min')`;
+  const [b] = await tx`select kind from bookings where code = ${booking}`;
+  const st = toDate(start), now = Date.now();
+  const ymdTH = new Date(st.getTime() + 7 * 3600000).toISOString().slice(0, 10);
+  const at = /^\d{2}:\d{2}$/.test(cfg.at) ? cfg.at : '18:00';
+  const plan: { t: number; when: string }[] = [];
+  if (cfg.day !== 'off') plan.push({ t: new Date(`${ymdTH}T${at}:00+07:00`).getTime() - 86400000, when: 'day' });
+  if (b?.kind === 'stay') {
+    const morning = new Date(`${ymdTH}T09:00:00+07:00`).getTime();
+    if (st.getTime() - morning >= 3 * 3600000) plan.push({ t: morning, when: 'today' });
+  } else {
+    const m = Number(cfg.soon);
+    if (m > 0) plan.push({ t: st.getTime() - m * 60000, when: 'soon' });
+  }
+  for (const p of plan) if (p.t > now && p.t < st.getTime())
+    await enqueue(tx, { booking, channel: 'line_push', template: 'reminder', runAfter: new Date(p.t).toISOString(), payload: { when: p.when } });
 }
 
 // ---------- สร้างการจอง (กันที่ไว้ hold_minutes นาที) ----------
@@ -84,6 +110,8 @@ export async function createOrder(customer: string, items: CartItem[], acceptedP
           codes.push(bk);
         }
         await enqueue(tx, { order: code, channel: 'email', template: 'new_booking' });
+        // ลูกค้าได้การ์ด "รอโอน" พร้อม QR พร้อมเพย์ในแชท
+        if (!free) await enqueue(tx, { order: code, channel: 'line_push', template: 'booked' });
         if (free) for (const bk of codes) await enqueue(tx, { booking: bk, channel: 'calendar', template: 'confirm' });
         if (free) {
           await enqueue(tx, { order: code, channel: 'line_push', template: 'paid' });
@@ -93,11 +121,7 @@ export async function createOrder(customer: string, items: CartItem[], acceptedP
               if (at > Date.now()) await enqueue(tx, { order: code, channel: 'line_push', template: 'balance_due', runAfter: new Date(at).toISOString() });
             }
           }
-          const remindH = Number(await setting('remind_hours_before', '24')) || 24;
-          for (let i = 0; i < codes.length; i++) {
-            const when = new Date(new Date(q.items[i].start_at.replace(' ', 'T').replace('+07', '+07:00')).getTime() - remindH * 3600000);
-            if (when.getTime() > Date.now()) await enqueue(tx, { booking: codes[i], channel: 'line_push', template: 'reminder', runAfter: when.toISOString() });
-          }
+          for (let i = 0; i < codes.length; i++) await queueReminders(tx, codes[i], q.items[i].start_at);
         }
         return { order: code as string, bookings: codes, due_now: q.due_now, total: q.total, paid: free, credit_used: credit };
       });
@@ -188,6 +212,7 @@ export async function createOrder(customer: string, items: CartItem[], acceptedP
                        ${tx.json({ flags: chk.flags, ok: chk.ok, ocr: chk.ocr })}, ${purpose}, 'transfer')`;
       if (purpose === 'deposit') await tx`update orders set status = 'pending_review' where code = ${code}`;
       await enqueue(tx, { order: code, channel: 'line_push', template: 'staff_new', payload: { kind: 'slip' } });
+      await enqueue(tx, { order: code, channel: 'line_push', template: 'slip_received' });
       await enqueue(tx, { order: code, channel: 'email', template: 'slip_review' });
       return { payment: pc as string };
     });
@@ -208,7 +233,6 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function reviewPayment(staffUser: StaffUser, payment: string, action: ReviewAction, amountSlip: number | null, reason: string | null, rejectKind: string | null = null) {
   const staff = staffUser.code;
-  const remindH = Number(await setting('remind_hours_before', '24')) || 24;
   const hold = Number(await setting('hold_minutes', '30')) || 30;
   const pushIds: number[] = [];
   try {
@@ -288,10 +312,7 @@ export async function reviewPayment(staffUser: StaffUser, payment: string, actio
         pushIds.push(await enqueue(tx, { order: p.order_code, channel: 'line_push', template: 'paid' }));
         for (const b of bk) {
           await enqueue(tx, { booking: b.code, channel: 'calendar', template: 'confirm' });
-          const when = new Date(new Date(b.start_at).getTime() - remindH * 3600000);
-          if (when.getTime() > Date.now()) {
-            await enqueue(tx, { booking: b.code, channel: 'line_push', template: 'reminder', runAfter: when.toISOString() });
-          }
+          await queueReminders(tx, b.code, b.start_at);
         }
         return;
       }
@@ -434,10 +455,7 @@ export async function reschedule(staffUser: StaffUser, code: string, p: { date?:
       // การเตือนเดิมยกเลิก ตั้งใหม่ตามวันใหม่
       await tx`update notifications set status = 'sent', last_error = 'ข้าม: เลื่อนวันแล้ว', sent_at = now()
                where booking_code = ${code} and template = 'reminder' and status = 'queued'`;
-      const [rv] = await tx`select value from settings where key = 'remind_hours_before'`;
-      const v = rv?.value ?? '24';
-      const when = new Date(new Date(start.replace(' ', 'T').replace('+07', '+07:00')).getTime() - (Number(v) || 24) * 3600000);
-      if (when.getTime() > Date.now() && b.status === 'confirmed') await enqueue(tx, { booking: code, channel: 'line_push', template: 'reminder', runAfter: when.toISOString() });
+      if (b.status === 'confirmed') await queueReminders(tx, code, start);
       pushIds.push(await enqueue(tx, { booking: code, channel: 'line_push', template: 'rescheduled', payload: { old: b.old_s } }));
       if (b.calendar_event_id) await enqueue(tx, { booking: code, channel: 'calendar', template: 'rescheduled' });
     });

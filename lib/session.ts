@@ -40,7 +40,8 @@ export async function setCustomerCookie(code: string) { (await cookies()).set(CO
 export async function setStaffCookie(code: string) { (await cookies()).set(STAFF_COOKIE, seal('s:' + code), opts); }
 export async function clearStaffCookie() { (await cookies()).delete(STAFF_COOKIE); }
 
-export const demoMode = () => process.env.DEMO_MODE === '1';
+// โหมดเดโม่ใช้ได้เฉพาะเครื่องทดลองที่ยังไม่มี LIFF · ใส่ LIFF ID แล้วปิดเองทันที (กันทุกคนเป็นลูกค้าคนเดียวกัน และกันเข้าหลังบ้านโดยไม่ล็อกอิน)
+export const demoMode = () => process.env.DEMO_MODE === '1' && !process.env.NEXT_PUBLIC_LIFF_ID;
 
 // ลูกค้าที่ล็อกอินอยู่ (โหมดเดโม่: ลูกค้าสมมติจาก env)
 export async function currentCustomer(): Promise<string | null> {

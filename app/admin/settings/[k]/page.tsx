@@ -10,6 +10,7 @@ import { Deposit, Hours, Messages, PaySettings, Xsell } from '@/components/admin
 import StaffAdmin from '@/components/StaffAdmin';
 import Connect from '@/components/admin/set/Connect';
 import RichMenu from '@/components/admin/set/RichMenu';
+import { RM_CONTACT, RM_KEYWORDS } from '@/lib/richmenu';
 import { liffId } from '@/lib/config';
 import { services } from '@/lib/connect';
 
@@ -100,7 +101,20 @@ export default async function SettingPage({ params }: { params: Promise<{ k: str
     const v = Object.fromEntries(rows.map((r) => [r.key, r.value]));
     body = <Connect svcs={svcs} biz={[...cals] as never}
       ocr={{ on: v.ocr_enabled !== 'off', limit: v.ocr_month_limit ?? '1000', used: Number(v['ocr_used_' + ym] ?? 0) }} />;
-    if (s.role === 'owner') body = <>{body}<RichMenu ready={!!process.env.LINE_CHANNEL_ACCESS_TOKEN && !!(await liffId())} /></>;
+    const log = await sql`select id, channel, template, status, tries, left(coalesce(last_error, ''), 140) as err,
+                                 to_char(created_at at time zone 'Asia/Bangkok', 'DD/MM HH24:MI') as at, coalesce(order_code, booking_code, pet_code, '') as ref
+                          from notifications order by id desc limit 20`;
+    body = <>{body}
+      <div className="grp">ข้อความล่าสุด 20 รายการ</div>
+      <div className="note">queued = รอส่ง (ยังไม่ใส่ key ของช่องทางนั้น หรือรอเวลา) · sent = ส่งแล้ว · failed = ส่งไม่ได้ ดูเหตุผลด้านล่าง</div>
+      <div className="list">{log.map((n) => (
+        <div key={n.id} className="li" style={{ alignItems: 'flex-start' }}><span className="t">
+          <b style={{ fontSize: 14 }}>{n.template} · {n.channel} · <span style={{ color: n.status === 'failed' ? 'var(--red-ink)' : n.status === 'sent' ? 'var(--green, #2e7d32)' : 'var(--amber)' }}>{n.status}</span></b>
+          <small>{n.at} · {n.ref}{n.tries ? ` · ลอง ${n.tries} ครั้ง` : ''}</small>
+          {n.err && <small style={{ color: 'var(--ink-2)' }}>{n.err}</small>}
+        </span></div>))}</div>
+    </>;
+    if (s.role === 'owner') body = <>{body}<RichMenu ready={!!process.env.LINE_CHANNEL_ACCESS_TOKEN && !!(await liffId())} liff={await liffId()} keywords={[...Object.values(RM_KEYWORDS).flat(), RM_CONTACT]} /></>;
   }
   return (
     <>

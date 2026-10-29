@@ -10,7 +10,7 @@ export function middleware(req: NextRequest) {
   const url = req.nextUrl;
   const state = url.searchParams.get('liff.state');
   const target = state ? safe(state) : url.pathname + url.search;
-  const demo = process.env.DEMO_MODE === '1';
+  const demo = process.env.DEMO_MODE === '1' && !process.env.NEXT_PUBLIC_LIFF_ID;   // ตรงกับ demoMode() ใน lib/session
   if (!demo && !req.cookies.get('bs_c')?.value) {
     const to = new URL('/login', req.url);
     to.searchParams.set('next', target);

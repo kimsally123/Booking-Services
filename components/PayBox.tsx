@@ -11,7 +11,19 @@ const pad = (n: number) => String(n).padStart(2, '0');
 const balanceMode = (o: Order) => o.status === 'paid' && Number(o.balance_due) > 0 && o.last_payment?.status !== 'pending';
 const remain = (o: Order) => balanceMode(o) ? Number(o.balance_due) : Math.round((Number(o.due_now) - Number(o.paid_amount || 0)) * 100) / 100;
 
-export default function PayBox({ order, qr, account, shop }: { order: Order; qr: string; account: string; shop: string }) {
+// ส่งข้อความในนามลูกค้าเข้าแชท OA (ต้องเปิด scope chat_message.write ใน LIFF) · ไม่ได้ = เปิดแชทพร้อมข้อความให้กดส่งเอง
+async function sendToChat(liffId: string | null, oa: string | null, text: string) {
+  if (liffId) {
+    try {
+      const liff = (await import('@line/liff')).default;
+      await liff.init({ liffId });
+      if (liff.isInClient()) { await liff.sendMessages([{ type: 'text', text }]); liff.closeWindow(); return; }
+    } catch { /* ไปใช้ลิงก์แชทแทน */ }
+  }
+  if (oa) location.href = `https://line.me/R/oaMessage/${encodeURIComponent(oa.startsWith('@') ? oa : '@' + oa)}/?${encodeURIComponent(text)}`;
+}
+
+export default function PayBox({ order, qr, account, shop, liffId, oa }: { order: Order; qr: string; account: string; shop: string; liffId?: string | null; oa?: string | null }) {
   const router = useRouter();
   const file = useRef<HTMLInputElement>(null);
   const [left, setLeft] = useState<number | null>(null);
@@ -76,7 +88,9 @@ export default function PayBox({ order, qr, account, shop }: { order: Order; qr:
           <span className="ms" style={{ fontSize: 32, color: '#8A5A00' }}>hourglass_top</span></span>
         <b style={{ fontSize: 20, fontWeight: 800 }}>ส่งสลิปแล้ว</b>
         <div className="sub" style={{ maxWidth: 260 }}>ร้านกำลังตรวจ · ผลจะแจ้งในแชท LINE</div>
-        <a className="btn" href={`/me/b/${order.code}`} style={{ minWidth: 220 }}>ดูการจองของฉัน</a>
+        {(liffId || oa) && <button className="btn" style={{ minWidth: 220 }} onClick={() => sendToChat(liffId ?? null, oa ?? null, `ยืนยันการจอง ${order.code}`)}>ส่งยืนยันการจองเข้าแชท</button>}
+        <div className="cap" style={{ maxWidth: 260 }}>ส่งแล้วจะได้การ์ดสถานะการจองในแชท · ส่งรหัส {order.code} เมื่อไหร่ก็เช็กสถานะได้</div>
+        <a className="btn ghost" href={`/me/b/${order.code}`} style={{ minWidth: 220 }}>ดูการจองของฉัน</a>
       </div>
     </main>
   );

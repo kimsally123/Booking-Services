@@ -53,7 +53,11 @@ export default function StaffAdmin({ me, staff, businesses }: { me: string; staf
         <div className="note y" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <b>ลิงก์เชิญ {staff.find((s) => s.code === link.code)?.display_name} (แสดงครั้งเดียว ส่งให้พนักงานทาง LINE)</b>
           <code style={{ wordBreak: 'break-all', fontSize: 12 }}>{link.url}</code>
-          <button className="pbtn" style={{ alignSelf: 'flex-start' }} onClick={() => navigator.clipboard?.writeText(link.url)}>คัดลอก</button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <a className="pbtn" href={`https://line.me/R/share?text=${encodeURIComponent(`ลิงก์เข้าหลังบ้านสำหรับพนักงาน (ใช้ได้ครั้งเดียว ภายใน 72 ชม.)\nกดเปิดใน LINE: ${link.url}`)}`}>ส่งทาง LINE</a>
+            <button className="pbtn" onClick={() => navigator.clipboard?.writeText(link.url)}>คัดลอก</button>
+          </div>
+          <small className="cap">พนักงานกดลิงก์ใน LINE แล้วยืนยันตัวตน ระบบผูกบัญชีและเปลี่ยนเมนูในแชทของเขาเป็นเมนูพนักงานให้เอง (ต้องเพิ่มเพื่อน OA ก่อน)</small>
         </div>
       )}
       <span className="cap">เชิญพนักงาน</span>
