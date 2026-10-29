@@ -1,6 +1,6 @@
 import 'server-only';
 import { sql } from './db';
-import { BookingError, quote } from './booking';
+import { BookingError, quote, vaccineMode } from './booking';
 import { enqueue, sendDue, type Tx } from './notify';
 import { imageType, putFile } from './storage';
 import { baht, todayTH } from './thaidate';
@@ -450,7 +450,7 @@ export async function reschedule(staffUser: StaffUser, code: string, p: { date?:
                             join businesses bz on bz.code = ${b.business_code}
                             where bp.booking_code = ${code} and bz.need_vaccine
                               and coalesce((select max(v.expires_on) from pet_vaccines v where v.pet_code = pt.code and v.status = 'approved'), '1900-01-01') < ${date}::date`;
-      if (vx?.names) throw new BookingError('vaccine_required', `${vx.names} วัคซีนหมดอายุก่อนวันใหม่`);
+      if (vx?.names && (await vaccineMode()) === 'booking') throw new BookingError('vaccine_required', `${vx.names} วัคซีนหมดอายุก่อนวันใหม่`);
       await tx`update bookings set start_at = ${start}::timestamptz, end_at = ${end}::timestamptz, session_code = ${session}, staff_code = ${staff} where code = ${code}`;
       // การเตือนเดิมยกเลิก ตั้งใหม่ตามวันใหม่
       await tx`update notifications set status = 'sent', last_error = 'ข้าม: เลื่อนวันแล้ว', sent_at = now()

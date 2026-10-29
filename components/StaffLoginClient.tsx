@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 // พนักงานล็อกอินด้วย LINE (ผ่าน LIFF) · mode=join ใช้ลิงก์เชิญครั้งแรก
-export default function StaffLoginClient({ liffId, mode, token }: { liffId: string | null; mode: 'join' | 'login'; token?: string }) {
+export default function StaffLoginClient({ liffId, mode, token }: { liffId: string | null; mode: 'join' | 'login' | 'setup'; token?: string }) {
   const router = useRouter();
   const [msg, setMsg] = useState(liffId ? 'กำลังเข้าสู่ระบบด้วย LINE…' : 'ยังไม่ได้ใส่ LIFF ID · เจ้าของใส่ได้ที่ ตั้งค่า → รับเงินและข้อมูลร้าน');
   const [err, setErr] = useState(false);
@@ -16,12 +16,12 @@ export default function StaffLoginClient({ liffId, mode, token }: { liffId: stri
         await liff.init({ liffId: liffId! });
         if (!liff.isLoggedIn()) { liff.login({ redirectUri: window.location.href }); return; }
         const idToken = liff.getIDToken();
-        const r = await fetch(mode === 'join' ? '/api/staff/join' : '/api/staff/login', {
+        const r = await fetch(mode === 'join' ? '/api/staff/join' : mode === 'setup' ? '/api/staff/setup' : '/api/staff/login', {
           method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ idToken, token }),
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) { setErr(true); setMsg(j.message || 'เข้าสู่ระบบไม่สำเร็จ'); return; }
-        if (mode === 'join') router.replace(j.menu ? '/admin?welcome=menu' : '/admin?welcome=1'); else router.refresh();
+        if (mode === 'join' || mode === 'setup') router.replace(j.menu ? '/admin?welcome=menu' : '/admin?welcome=1'); else router.refresh();
       } catch (e) {
         setErr(true); setMsg((e as Error).message || 'เข้าสู่ระบบไม่สำเร็จ');
       }

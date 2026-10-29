@@ -3,6 +3,7 @@ import { dbPort, sql } from '@/lib/db';
 import { getBizCatalog, getCatalog, getPets } from '@/lib/catalog';
 import { me } from '@/lib/me';
 import { liffId } from '@/lib/config';
+import { oaId } from '@/lib/line';
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -49,6 +50,9 @@ export async function GET(req: NextRequest) {
       const done = new Set((await sql`select name from schema_migrations`).map((r) => r.name as string));
       out.migrations_missing = files.filter((f) => !done.has(f));
     } catch (e) { out.migrations_missing = `ตรวจไม่ได้: ${(e as Error).message}`; }
+    const [pp] = await sql`select value from settings where key = 'promptpay_id'`;
+    out.promptpay_set = !!String(pp?.value ?? '').replace(/\D/g, '');   // QR ขึ้นได้ต่อเมื่อเป็น true
+    out.line_oa_id = await oaId().catch(() => null);                    // ใช้เปิดแชทพร้อมข้อความ
     out.demo_mode = process.env.DEMO_MODE === '1' && !process.env.NEXT_PUBLIC_LIFF_ID;
     out.env = Object.fromEntries(['NEXT_PUBLIC_LIFF_ID', 'LINE_LOGIN_CHANNEL_ID', 'LINE_CHANNEL_ACCESS_TOKEN', 'LINE_CHANNEL_SECRET', 'SESSION_SECRET', 'CRON_SECRET', 'NEXT_PUBLIC_SUPABASE_URL']
       .map((k) => [k, !!process.env[k]]));

@@ -27,8 +27,8 @@ export function middleware(req: NextRequest) {
     target = t.pathname + t.search;
   }
 
-  // ไปหน้า /login อยู่แล้ว (เช่น liff.state=/login?next=...) → ส่งไปพร้อมค่าจาก LINE
-  if (state && target.startsWith('/login')) return NextResponse.redirect(new URL(target, req.url));
+  // ไปหน้า /login หรือหน้าพนักงาน (/admin, /staff) → ส่งไปพร้อมค่าจาก LINE เลย ไม่ต้องล็อกอินแบบลูกค้า
+  if (state && /^\/(login|admin|staff)(\/|\?|$)/.test(target)) return NextResponse.redirect(new URL(target, req.url));
 
   if (!demo && !hasCookie) {
     const to = new URL('/login', req.url);

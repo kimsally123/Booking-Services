@@ -65,6 +65,7 @@ export async function getBizCatalog(code: string): Promise<BizCatalog | null> {
     tiers: tiers as never,
     cross_sells: cross_sells as never,
     closures: closures as never,
+    vaccine_check: (await getSetting('vaccine_check', 'checkin')) === 'booking' ? 'booking' : 'checkin',
   };
 }
 

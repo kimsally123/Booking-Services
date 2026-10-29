@@ -31,8 +31,16 @@ async function petsOf(customer: string, codes: string[]): Promise<Pet[]> {
   return [...rows];
 }
 
-function needVaccine(b: Business, pets: Pet[], onDate: string) {
-  if (!b.need_vaccine) return;
+let vaxMode: { v: string; at: number } | null = null;
+export async function vaccineMode(): Promise<'checkin' | 'booking'> {
+  if (!vaxMode || Date.now() - vaxMode.at > 30000) {
+    const [r] = await sql`select value from settings where key = 'vaccine_check'`;
+    vaxMode = { v: r?.value === 'booking' ? 'booking' : 'checkin', at: Date.now() };
+  }
+  return vaxMode.v as 'checkin' | 'booking';
+}
+function needVaccine(b: Business, pets: Pet[], onDate: string, mode: string) {
+  if (!b.need_vaccine || mode === 'checkin') return;
   const bad = pets.filter((p) => !p.vaccine_until || p.vaccine_until < onDate);
   if (bad.length) throw new BookingError('vaccine_required', `${bad.map((p) => p.name).join(', ')} ยังไม่มีวัคซีนที่ผ่านตรวจถึงวันที่ใช้บริการ`);
 }
@@ -206,7 +214,7 @@ export async function quote(customer: string, items: CartItem[]): Promise<Quote>
 
     if (it.kind === 'stay') {
       const pets = await petsOf(customer, it.pets);
-      needVaccine(b, pets, it.from);
+      needVaccine(b, pets, it.from, await vaccineMode());
       const [u] = await sql`select * from units where code = ${it.unit} and business_code = ${b.code} and active`;
       if (!u) throw new BookingError('unit_invalid', 'ไม่พบห้อง/บ้านนี้');
       const avail = (await stayAvailability(b.code, it.from, it.to, pets.length, it.guests ?? null,
@@ -232,7 +240,7 @@ export async function quote(customer: string, items: CartItem[]): Promise<Quote>
     if (it.kind === 'session') {
       const pets = await petsOf(customer, it.pets);
       if (!pets.length) throw new BookingError('no_pet', 'เลือกน้องอย่างน้อย 1 ตัว');
-      needVaccine(b, pets, it.date);
+      needVaccine(b, pets, it.date, await vaccineMode());
       const s = (await sessionAvailability(b.code, it.date, pets.map((p) => Number(p.weight_kg)))).find((x) => x.code === it.session);
       if (!s) throw new BookingError('session_invalid', 'ไม่มีรอบนี้ในวันที่เลือก');
       if (!s.free) {
@@ -248,7 +256,7 @@ export async function quote(customer: string, items: CartItem[]): Promise<Quote>
 
     if (it.kind === 'slot') {
       const [pet] = await petsOf(customer, [it.pet]);
-      needVaccine(b, [pet], it.start.slice(0, 10));
+      needVaccine(b, [pet], it.start.slice(0, 10), await vaccineMode());
       const date = it.start.slice(0, 10), time = it.start.slice(11, 16);
       const d = await groomDuration(b.code, it.service, it.addons, pet.tier_code);
       const av = await slotAvailability(b.code, date, it.service, it.addons, pet.tier_code);

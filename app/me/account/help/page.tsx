@@ -1,4 +1,5 @@
 import { getSetting } from '@/lib/catalog';
+import { oaId } from '@/lib/line';
 import { CustScreen, requireCustomer } from '@/components/cust/Gate';
 import { Back } from '@/components/cust/AccountForms';
 
@@ -6,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export default async function Help() {
   const g = await requireCustomer();
   if ('node' in g) return g.node;
-  const [shop, oa, phone, addr, map] = await Promise.all([getSetting('shop_name', 'ร้าน'), getSetting('line_oa_id'), getSetting('shop_phone'), getSetting('shop_address'), getSetting('shop_map_url')]);
+  const [shop, oa, phone, addr, map] = await Promise.all([getSetting('shop_name', 'ร้าน'), oaId(), getSetting('shop_phone'), getSetting('shop_address'), getSetting('shop_map_url')]);
   return (
     <CustScreen>
       <div className="head"><Back /><b style={{ fontSize: 20, fontWeight: 800 }}>ติดต่อเจ้าหน้าที่</b></div>

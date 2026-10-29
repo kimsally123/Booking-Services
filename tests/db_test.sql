@@ -67,7 +67,9 @@ insert into bookings (code, order_code, business_code, session_code, start_at, e
 select pg_temp.fails('ขนาดไม่ตรงรอบ', $q$insert into booking_pets values ('X8','PBIG')$q$, 'size_mismatch');
 
 -- 7 ยังไม่มีวัคซีน → จองสระไม่ได้
+update settings set value = 'booking' where key = 'vaccine_check';
 select pg_temp.fails('ไม่มีวัคซีน', $q$insert into booking_pets values ('X8','PNOVAC')$q$, 'vaccine_required');
+update settings set value = 'checkin' where key = 'vaccine_check';
 
 -- 8 น้องของคนอื่น
 select pg_temp.fails('น้องไม่ใช่ของเจ้าของทริป', $q$insert into booking_pets values ('X8','P001')$q$, 'pet_not_owner');

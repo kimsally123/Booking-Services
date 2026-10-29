@@ -1,4 +1,5 @@
 import 'server-only';
+import { sql } from './db';
 import { loginChannelId } from './config';
 
 // LINE Login: ตรวจ ID token จาก LIFF กับ LINE โดยตรง (ไม่เชื่อข้อมูลจากหน้าเว็บ)
@@ -40,4 +41,21 @@ export async function replyMessage(replyToken: string, messages: LineMessage[]):
     body: JSON.stringify({ replyToken, messages: messages.slice(0, 5) }),
   });
   if (!r.ok) throw new Error(`LINE reply ${r.status}: ${(await r.text()).slice(0, 200)}`);
+}
+
+// LINE OA ID (@xxxx): ที่ร้านใส่ในหลังบ้าน · ไม่ใส่ = ถาม LINE จาก token (/v2/bot/info) แล้วจำไว้
+let botId: { v: string | null; at: number } | null = null;
+export async function oaId(): Promise<string | null> {
+  const [r] = await sql`select value from settings where key = 'line_oa_id'`;
+  const set = String(r?.value ?? '').trim();
+  if (set) return set.startsWith('@') ? set : '@' + set;
+  if (botId && Date.now() - botId.at < 3600000) return botId.v;
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token) return null;
+  try {
+    const res = await fetch(`${process.env.LINE_API_BASE || 'https://api.line.me'}/v2/bot/info`, { headers: { authorization: `Bearer ${token}` } });
+    const j = res.ok ? await res.json() : null;
+    botId = { v: (j?.premiumId || j?.basicId) ?? null, at: Date.now() };
+  } catch { botId = { v: null, at: Date.now() }; }
+  return botId.v;
 }

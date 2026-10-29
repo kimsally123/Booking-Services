@@ -189,6 +189,10 @@ export function PaySettings({ values }: { values: Record<string, string> }) {
       <div className="note">QR พร้อมเพย์สร้างตามยอดมัดจำของแต่ละการจอง · ตรวจชื่อบัญชีให้ตรงกับที่ลูกค้าเห็นในแอปธนาคาร</div>
       <Msg />
       <button className="btnw dark" disabled={busy} onClick={() => save('settings.save', { values: Object.fromEntries(PAY.map(([k]) => [k, v[k] ?? ''])) })}>บันทึก</button>
+      <div className="grp">วัคซีน (สระ · Pet hotel)</div>
+      <div className="row"><span className="t"><b>ต้องผ่านตรวจวัคซีนก่อนจอง</b>
+        <small>{v.vaccine_check === 'booking' ? 'เปิด: น้องที่ยังไม่มีวัคซีนผ่านตรวจจองไม่ได้' : 'ปิด: จองได้เลย ร้านตรวจสมุดวัคซีนวันมาใช้บริการ'}</small></span>
+        <Switch on={v.vaccine_check === 'booking'} onChange={(on) => { const n = on ? 'booking' : 'checkin'; setV({ ...v, vaccine_check: n }); save('settings.save', { values: { vaccine_check: n } }); }} /></div>
     </>
   );
 }

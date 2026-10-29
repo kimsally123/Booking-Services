@@ -12,15 +12,16 @@ const balanceMode = (o: Order) => o.status === 'paid' && Number(o.balance_due) >
 const remain = (o: Order) => balanceMode(o) ? Number(o.balance_due) : Math.round((Number(o.due_now) - Number(o.paid_amount || 0)) * 100) / 100;
 
 // ส่งข้อความในนามลูกค้าเข้าแชท OA (ต้องเปิด scope chat_message.write ใน LIFF) · ไม่ได้ = เปิดแชทพร้อมข้อความให้กดส่งเอง
-async function sendToChat(liffId: string | null, oa: string | null, text: string) {
+async function sendToChat(liffId: string | null, oa: string | null, text: string): Promise<string | null> {
   if (liffId) {
     try {
       const liff = (await import('@line/liff')).default;
       await liff.init({ liffId });
-      if (liff.isInClient()) { await liff.sendMessages([{ type: 'text', text }]); liff.closeWindow(); return; }
-    } catch { /* ไปใช้ลิงก์แชทแทน */ }
+      if (liff.isInClient()) { await liff.sendMessages([{ type: 'text', text }]); liff.closeWindow(); return null; }
+    } catch { /* ไม่มีสิทธิ์ส่งข้อความ (scope chat_message.write) → เปิดแชทพร้อมข้อความแทน */ }
   }
-  if (oa) location.href = `https://line.me/R/oaMessage/${encodeURIComponent(oa.startsWith('@') ? oa : '@' + oa)}/?${encodeURIComponent(text)}`;
+  if (oa) { location.href = `https://line.me/R/oaMessage/${encodeURIComponent(oa.startsWith('@') ? oa : '@' + oa)}/?${encodeURIComponent(text)}`; return null; }
+  return `ส่งเข้าแชทไม่ได้ · พิมพ์ "${text}" ในแชทร้านเองได้เลย`;
 }
 
 export default function PayBox({ order, qr, account, shop, liffId, oa }: { order: Order; qr: string; account: string; shop: string; liffId?: string | null; oa?: string | null }) {
@@ -88,7 +89,8 @@ export default function PayBox({ order, qr, account, shop, liffId, oa }: { order
           <span className="ms" style={{ fontSize: 32, color: '#8A5A00' }}>hourglass_top</span></span>
         <b style={{ fontSize: 20, fontWeight: 800 }}>ส่งสลิปแล้ว</b>
         <div className="sub" style={{ maxWidth: 260 }}>ร้านกำลังตรวจ · ผลจะแจ้งในแชท LINE</div>
-        {(liffId || oa) && <button className="btn" style={{ minWidth: 220 }} onClick={() => sendToChat(liffId ?? null, oa ?? null, `ยืนยันการจอง ${order.code}`)}>ส่งยืนยันการจองเข้าแชท</button>}
+        {(liffId || oa) && <button className="btn" style={{ minWidth: 220 }} onClick={async () => { const m = await sendToChat(liffId ?? null, oa ?? null, `ยืนยันการจอง ${order.code}`); if (m) setErr(m); }}>ส่งยืนยันการจองเข้าแชท</button>}
+        {err && <div className="err" style={{ maxWidth: 300 }}>{err}</div>}
         <div className="cap" style={{ maxWidth: 260 }}>ส่งแล้วจะได้การ์ดสถานะการจองในแชท · ส่งรหัส {order.code} เมื่อไหร่ก็เช็กสถานะได้</div>
         <a className="btn ghost" href={`/me/b/${order.code}`} style={{ minWidth: 220 }}>ดูการจองของฉัน</a>
       </div>
@@ -103,7 +105,8 @@ export default function PayBox({ order, qr, account, shop, liffId, oa }: { order
           <div className="card on" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
             <span className="t"><b style={{ fontSize: 16 }}>ยืนยันการจองผ่านแชท</b>
               <small>ส่งรหัส {order.code} เข้าแชทร้าน แล้วรับการ์ดการจองพร้อม QR พร้อมเพย์ เก็บไว้โอนทีหลังได้ · ส่งรหัสเมื่อไหร่ก็เช็กสถานะได้</small></span>
-            <button className="btn" onClick={() => sendToChat(liffId ?? null, oa ?? null, `ยืนยันการจอง ${order.code}`)}>ยืนยันการจองผ่านแชท</button>
+            <button className="btn" onClick={async () => { const m = await sendToChat(liffId ?? null, oa ?? null, `ยืนยันการจอง ${order.code}`); if (m) setErr(m); }}>ยืนยันการจองผ่านแชท</button>
+            {err && <div className="err">{err}</div>}
           </div>
         )}
         {bal && <div className="warn"><span className="ms">info</span>มัดจำผ่านแล้ว · ชำระยอดคงเหลือภายใน {order.balance_due_by ? thDate(order.balance_due_by) : 'ก่อนวันเข้าพัก'}</div>}

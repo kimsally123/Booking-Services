@@ -95,7 +95,9 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial, credi
 
   const chosenPets = pets.filter((p) => sel.includes(p.code));
   const pet = chosenPets[0] ?? null;
-  const vaxOk = (p: Pet, on: string) => !b.need_vaccine || (!!p.vaccine_until && p.vaccine_until >= on);
+  const vaxPass = (p: Pet, on: string) => !b.need_vaccine || (!!p.vaccine_until && p.vaccine_until >= on);
+  // ร้านตั้ง "ตรวจวัคซีนวันมา" = เลือกน้องได้ทุกตัว แต่บอกให้นำสมุดวัคซีนมา
+  const vaxOk = (p: Pet, on: string) => cat.vaccine_check !== 'booking' || vaxPass(p, on);
   const serviceDate = (b.booking_type === 'stay' ? from : date) ?? today;
 
   // ---------- ที่ว่างจาก server ----------
@@ -290,8 +292,9 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial, credi
             <span className="t">
               <b>{p.name}</b>
               <small>{[p.breed, `${p.weight_kg} กก.`].filter(Boolean).join(' · ')}</small>
-              {b.need_vaccine && (ok
+              {b.need_vaccine && (vaxPass(p, serviceDate)
                 ? <small className="ok">วัคซีนผ่านตรวจ ใช้ได้ถึง {thDay(p.vaccine_until!)}</small>
+                : ok ? <small style={{ color: 'var(--amber)' }}>{p.vaccine_pending ? 'วัคซีนรอร้านตรวจ' : 'ยังไม่มีวัคซีนในระบบ'} · นำสมุดวัคซีนมาวันใช้บริการ</small>
                 : <small style={{ color: 'var(--red-ink)' }}>{p.vaccine_pending ? 'วัคซีนรอร้านตรวจ' : 'ยังไม่มีวัคซีนที่ผ่านตรวจ'}</small>)}
             </span>
             <Tick on={sel.includes(p.code)} />
@@ -334,7 +337,7 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial, credi
   );
   if (step === 'pets') content = (
     <><div className="h1">น้องที่มา{b.booking_type === 'stay' ? 'พัก' : 'ว่ายน้ำ'}</div>
-      {b.need_vaccine && <div className="sub">ต้องมีวัคซีนที่ร้านตรวจแล้ว และยังไม่หมดอายุ</div>}
+      {b.need_vaccine && <div className="sub">{cat.vaccine_check === 'booking' ? 'ต้องมีวัคซีนที่ร้านตรวจแล้ว และยังไม่หมดอายุ' : 'นำสมุดวัคซีนมาวันใช้บริการ ร้านตรวจหน้างาน'}</div>}
       {petCards(false)}</>
   );
   if (step === 'pet') content = <><div className="h1">น้องตัวไหน</div>{petCards(true)}</>;

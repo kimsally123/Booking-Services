@@ -199,7 +199,7 @@ export async function applySetting(s: StaffUser, kind: string, d: D) {
     // ---------- ค่าร้าน (เจ้าของ) ----------
     case 'settings.save': {
       owner(s);
-      const ALLOW = ['liff_id', 'shop_name', 'legal_name', 'promptpay_id', 'account_name', 'notify_email', 'line_oa_id', 'shop_phone', 'shop_address', 'shop_map_url', 'remind_hours_before', 'remind_day_before', 'remind_day_at', 'remind_soon_min',
+      const ALLOW = ['liff_id', 'shop_name', 'legal_name', 'promptpay_id', 'account_name', 'notify_email', 'line_oa_id', 'shop_phone', 'shop_address', 'shop_map_url', 'remind_hours_before', 'remind_day_before', 'remind_day_at', 'remind_soon_min', 'vaccine_check',
         'msg_booked', 'msg_slip_received', 'msg_paid', 'msg_reminder', 'msg_slip_rejected', 'msg_groom_done', 'msg_cancelled', 'msg_vaccine', 'msg_rescheduled',
         'ocr_enabled', 'ocr_month_limit'];
       const v = (d.values ?? {}) as D;

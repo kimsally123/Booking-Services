@@ -103,6 +103,7 @@ export interface BizCatalog {
   sessions: Session[];
   tiers: Tier[];
   cross_sells: CrossSell[];
+  vaccine_check?: 'checkin' | 'booking';
   closures: { unit_code: string | null; session_code: string | null; date_from: string; date_to: string; reason: string | null }[];
 }
 
