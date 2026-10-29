@@ -36,7 +36,7 @@ export default async function Home() {
           {cat.businesses.map((b) => {
             const L = bizLook(b.code, b.color, b.booking_type);
             return (
-              <Link key={b.code} href={`/b/${b.code}`} className="btile" style={{ background: L.bg, color: L.fg, boxShadow: L.shadow }}>
+              <Link prefetch={false} key={b.code} href={`/b/${b.code}`} className="btile" style={{ background: L.bg, color: L.fg, boxShadow: L.shadow }}>
                 <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <span className="ms">{L.icon}</span>
                   {closedToday.has(b.code) && <span className="closed">ปิดวันนี้</span>}
@@ -52,10 +52,10 @@ export default async function Home() {
           <section key={b.code} style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
             <div className="section" style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--ink-2)' }}>
               <span>{b.code === 'villa' ? 'บ้านพักสำหรับคน' : 'ห้องพักสำหรับน้อง'} · {b.name}</span>
-              <Link href={`/b/${b.code}`} style={{ fontSize: 13, textDecoration: 'underline' }}>จอง</Link>
+              <Link prefetch={false} href={`/b/${b.code}`} style={{ fontSize: 13, textDecoration: 'underline' }}>จอง</Link>
             </div>
             <div className="hrow">{sc!.units.map((u) => (
-              <Link key={u.code} href={`/b/${b.code}/u/${u.code}`} className="hcard">
+              <Link prefetch={false} key={u.code} href={`/b/${b.code}/u/${u.code}`} className="hcard">
                 <Photo file={u.photos.find((p) => p.is_cover)?.file ?? u.photos[0]?.file} label={u.name} />
                 <span className="b"><b>{u.name}</b><small className="cap">{u.summary}</small>
                   <span><small className="cap">เริ่ม </small><b className="num">{baht(Number(u.price))}</b><small className="cap">/คืน</small></span></span>

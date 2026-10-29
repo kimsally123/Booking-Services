@@ -18,7 +18,7 @@ export default function BookingCard({ o, biz }: { o: Order; biz: Biz[] }) {
   const owe = o.status === 'holding' ? `ต้องโอน ${baht(o.due_now - Number(o.paid_amount))}`
     : o.status === 'paid' && Number(o.balance_due) > 0 ? `ค้างชำระ ${baht(Number(o.balance_due))}` : null;
   return (
-    <Link href={`/me/b/${o.code}`} className="mybk">
+    <Link prefetch={false} href={`/me/b/${o.code}`} className="mybk">
       <span className="t">
         <span className="biztag" style={{ background: L.bg, color: L.fg, boxShadow: L.shadow }}>{i.biz}{o.items.length > 1 ? ` +${o.items.length - 1}` : ''}</span>
         <b>{i.item}{i.pets ? ` · ${i.pets}` : ''}</b>

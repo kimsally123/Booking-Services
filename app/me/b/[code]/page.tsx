@@ -28,7 +28,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ code: 
     : `ทริป ${o.items.length} รายการ`;
   return (
     <CustScreen>
-      <Link href="/me" className="back"><span className="ms">arrow_back</span></Link>
+      <Link prefetch={false} href="/me" className="back"><span className="ms">arrow_back</span></Link>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span className="cap num">{o.code}</span>
         <b style={{ fontSize: 22, fontWeight: 800 }}>{title}</b>
@@ -61,8 +61,8 @@ export default async function OrderDetail({ params }: { params: Promise<{ code: 
         {o.total - Number(o.paid_amount) - Number(o.balance_due) > 0 && !['cancelled', 'expired'].includes(o.status) && <div className="l"><span>จ่ายที่ร้าน</span><span className="num">{baht(o.total - Number(o.paid_amount) - Number(o.balance_due))}</span></div>}
         {o.refund_status && <div className="l"><span>{({ pending: 'ร้านกำลังโอนคืน', credited: 'คืนเป็นเครดิต', refunded: 'โอนคืนแล้ว', forfeited: 'ไม่ได้รับเงินคืนตามเงื่อนไข' } as Record<string, string>)[o.refund_status]}</span><span className="num">{Number(o.refund_amount) > 0 ? baht(Number(o.refund_amount)) : ''}</span></div>}
       </div>
-      {o.status === 'holding' && <Link href={`/pay/${o.code}`} className="btnw dark">จ่ายมัดจำ {baht(o.due_now - Number(o.paid_amount))} · แนบสลิป</Link>}
-      {o.status === 'paid' && Number(o.balance_due) > 0 && <Link href={`/pay/${o.code}`} className="btnw dark">ชำระยอดคงเหลือ {baht(Number(o.balance_due))}</Link>}
+      {o.status === 'holding' && <Link prefetch={false} href={`/pay/${o.code}`} className="btnw dark">จ่ายมัดจำ {baht(o.due_now - Number(o.paid_amount))} · แนบสลิป</Link>}
+      {o.status === 'paid' && Number(o.balance_due) > 0 && <Link prefetch={false} href={`/pay/${o.code}`} className="btnw dark">ชำระยอดคงเหลือ {baht(Number(o.balance_due))}</Link>}
       {['holding', 'pending_review', 'paid'].includes(o.status) && !used && <OrderRequest code={o.code} sent={o.change_request} />}
     </CustScreen>
   );

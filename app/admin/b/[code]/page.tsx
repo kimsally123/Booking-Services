@@ -117,9 +117,9 @@ export default async function BookingDetail({ params }: { params: Promise<{ code
           {(p.tags.length > 0 || p.note) && <span style={{ color: 'var(--red-ink)', fontSize: 13, fontWeight: 700 }}>⚠ {[...p.tags, p.note].filter(Boolean).join(' · ')}</span>}
         </div>); })}
 
-      {pay?.status === 'pending' && <Link href={`/admin/slips/${pay.code}`} className="btnw dark">ตรวจสลิป</Link>}
+      {pay?.status === 'pending' && <Link prefetch={false} href={`/admin/slips/${pay.code}`} className="btnw dark">ตรวจสลิป</Link>}
       {o.phone && <a href={`tel:${o.phone}`} className="btnw line">โทรหาลูกค้า</a>}
-      <Link href={`/admin/customers/${o.ccode}`} className="btnw line">ดูลูกค้าและน้อง</Link>
+      <Link prefetch={false} href={`/admin/customers/${o.ccode}`} className="btnw line">ดูลูกค้าและน้อง</Link>
       {o.change_request && <div className="note y">ลูกค้าขอ: {o.change_request}</div>}
       {o.refund_status === 'pending' && s.role !== 'staff' && <MarkRefunded order={o.code} amount={Number(o.refund_amount)} />}
       {o.status === 'paid' && <CollectAtShop order={o.code} owe={due} />}

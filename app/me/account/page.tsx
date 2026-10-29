@@ -34,13 +34,13 @@ export default async function Account() {
         </div>
       </div>
       <div className="wallet">
-        <Link href="/me/account/credit" style={{ background: '#FBF5E0' }}><small>เครดิต</small><b className="num">{baht(credit)}</b></Link>
-        <Link href="/me/account/pass" style={{ background: '#E3EEFB' }}><small>บัตรสระ</small><b className="num">{pass.n} ครั้ง</b></Link>
-        <Link href="/me/account/coupons" style={{ background: '#FBE7E7' }}><small>คูปอง</small><b className="num">0 ใบ</b></Link>
+        <Link prefetch={false} href="/me/account/credit" style={{ background: '#FBF5E0' }}><small>เครดิต</small><b className="num">{baht(credit)}</b></Link>
+        <Link prefetch={false} href="/me/account/pass" style={{ background: '#E3EEFB' }}><small>บัตรสระ</small><b className="num">{pass.n} ครั้ง</b></Link>
+        <Link prefetch={false} href="/me/account/coupons" style={{ background: '#FBE7E7' }}><small>คูปอง</small><b className="num">0 ใบ</b></Link>
       </div>
       <div className="list">
         {MENU.map(([ic, l, href]) => (
-          <Link key={href} href={href} className="li"><span className="ms">{ic}</span><span className="t"><span style={{ fontSize: 16 }}>{l}</span></span><span className="ms go">chevron_right</span></Link>
+          <Link prefetch={false} key={href} href={href} className="li"><span className="ms">{ic}</span><span className="t"><span style={{ fontSize: 16 }}>{l}</span></span><span className="ms go">chevron_right</span></Link>
         ))}
       </div>
     </CustScreen>

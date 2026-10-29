@@ -33,7 +33,7 @@ export default async function Settings() {
           <div className="list">
             {rows.map(([ic, l, k, v, lock]) => lock
               ? <div key={l} className="li" style={{ opacity: 0.5 }}><span className="ms">{ic}</span><span className="t"><span style={{ fontSize: 16 }}>{l}</span></span><span className="cap">{v}</span><span className="ms go">lock</span></div>
-              : <Link key={k} href={`/admin/settings/${k}`} className="li"><span className="ms">{ic}</span><span className="t"><span style={{ fontSize: 16 }}>{l}</span></span>{v && <span className="cap">{v}</span>}<span className="ms go">chevron_right</span></Link>)}
+              : <Link prefetch={false} key={k} href={`/admin/settings/${k}`} className="li"><span className="ms">{ic}</span><span className="t"><span style={{ fontSize: 16 }}>{l}</span></span>{v && <span className="cap">{v}</span>}<span className="ms go">chevron_right</span></Link>)}
           </div>
         </div>
       ))}

@@ -22,7 +22,7 @@ export default async function Customers({ searchParams }: { searchParams: Promis
       <form><input className="input" name="q" defaultValue={q} placeholder="ค้นหา ชื่อ · เบอร์ · ชื่อน้อง" /></form>
       <div>
         {rows.map((c) => (
-          <Link key={c.code} href={`/admin/customers/${c.code}`} className="row">
+          <Link prefetch={false} key={c.code} href={`/admin/customers/${c.code}`} className="row">
             <span className="t"><b>{c.display_name}</b><small>{[c.phone, c.pets && `น้อง: ${c.pets}`].filter(Boolean).join(' · ')}</small></span>
             <span className="cap">{c.n} ครั้ง</span><span className="ms" style={{ color: 'var(--ink-3)' }}>chevron_right</span>
           </Link>

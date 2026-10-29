@@ -12,16 +12,53 @@ const balanceMode = (o: Order) => o.status === 'paid' && Number(o.balance_due) >
 const remain = (o: Order) => balanceMode(o) ? Number(o.balance_due) : Math.round((Number(o.due_now) - Number(o.paid_amount || 0)) * 100) / 100;
 
 // ส่งข้อความในนามลูกค้าเข้าแชท OA (ต้องเปิด scope chat_message.write ใน LIFF) · ไม่ได้ = เปิดแชทพร้อมข้อความให้กดส่งเอง
-async function sendToChat(liffId: string | null, oa: string | null, text: string): Promise<string | null> {
-  if (liffId) {
-    try {
-      const liff = (await import('@line/liff')).default;
-      await liff.init({ liffId });
-      if (liff.isInClient()) { await liff.sendMessages([{ type: 'text', text }]); liff.closeWindow(); return null; }
-    } catch { /* ไม่มีสิทธิ์ส่งข้อความ (scope chat_message.write) → เปิดแชทพร้อมข้อความแทน */ }
-  }
-  if (oa) { location.href = `https://line.me/R/oaMessage/${encodeURIComponent(oa.startsWith('@') ? oa : '@' + oa)}/?${encodeURIComponent(text)}`; return null; }
-  return `ส่งเข้าแชทไม่ได้ · พิมพ์ "${text}" ในแชทร้านเองได้เลย`;
+// รอแต่ละขั้นไม่เกินกำหนด (LINE บางเครื่องค้างไม่ตอบ)
+const within = <T,>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<never>((_, no) => setTimeout(() => no(new Error('timeout')), ms))]);
+
+// ปุ่มยืนยันการจองผ่านแชท: 1) ส่งในนามลูกค้า (ต้องมี scope chat_message.write) 2) เปิดแชทร้านพร้อมข้อความ 3) คัดลอกรหัสไปวางเอง
+function ChatConfirm({ liffId, oa, code, label }: { liffId?: string | null; oa?: string | null; code: string; label: string }) {
+  const text = `ยืนยันการจอง ${code}`;
+  const [st, setSt] = useState<'idle' | 'busy' | 'opened' | 'manual'>('idle');
+  const [copied, setCopied] = useState(false);
+  const [why, setWhy] = useState('');
+  const go = async () => {
+    setSt('busy'); setWhy('');
+    const log: string[] = [];
+    if (liffId) {
+      try {
+        const liff = (await import('@line/liff')).default;
+        if (!(liff as unknown as { id?: string }).id) await within(liff.init({ liffId }), 5000);
+        log.push('init ok');
+        const ctx = liff.getContext();
+        log.push(`in LINE: ${liff.isInClient() ? 'ใช่' : 'ไม่ใช่'} · ${ctx?.type ?? '-'}`);
+        if (liff.isInClient()) {
+          await within(liff.sendMessages([{ type: 'text', text }]), 5000);
+          liff.closeWindow();
+          return;
+        }
+      } catch (e) { log.push(`ส่งเองไม่ได้: ${(e as Error).message || e}`); }
+    }
+    setWhy(log.join(' · '));
+    if (oa) {
+      location.href = `https://line.me/R/oaMessage/${encodeURIComponent(oa.startsWith('@') ? oa : '@' + oa)}/?${encodeURIComponent(text)}`;
+      setTimeout(() => setSt('opened'), 2500);   // ยังอยู่หน้านี้ = เปิดแชทไม่ได้ → ให้คัดลอก
+      return;
+    }
+    setSt('manual');
+  };
+  return (
+    <>
+      <button className="btn" disabled={st === 'busy'} onClick={go}>{st === 'busy' ? 'กำลังส่งเข้าแชท…' : label}</button>
+      {(st === 'opened' || st === 'manual') && (
+        <div className="note y" style={{ display: 'flex', flexDirection: 'column', gap: 8, textAlign: 'left' }}>
+          <span>ถ้าแชทร้านไม่เปิดขึ้นมา คัดลอกข้อความนี้ไปวางในแชทร้านแล้วกดส่ง</span>
+          {why && <small className="cap">{why}</small>}
+          <b className="num">{text}</b>
+          <button className="btn ghost" onClick={async () => { try { await navigator.clipboard.writeText(text); setCopied(true); } catch { setCopied(false); } }}>{copied ? 'คัดลอกแล้ว ✓' : 'คัดลอกข้อความ'}</button>
+        </div>
+      )}
+    </>
+  );
 }
 
 export default function PayBox({ order, qr, account, shop, liffId, oa }: { order: Order; qr: string; account: string; shop: string; liffId?: string | null; oa?: string | null }) {
@@ -89,7 +126,7 @@ export default function PayBox({ order, qr, account, shop, liffId, oa }: { order
           <span className="ms" style={{ fontSize: 32, color: '#8A5A00' }}>hourglass_top</span></span>
         <b style={{ fontSize: 20, fontWeight: 800 }}>ส่งสลิปแล้ว</b>
         <div className="sub" style={{ maxWidth: 260 }}>ร้านกำลังตรวจ · ผลจะแจ้งในแชท LINE</div>
-        {(liffId || oa) && <button className="btn" style={{ minWidth: 220 }} onClick={async () => { const m = await sendToChat(liffId ?? null, oa ?? null, `ยืนยันการจอง ${order.code}`); if (m) setErr(m); }}>ส่งยืนยันการจองเข้าแชท</button>}
+        <div style={{ minWidth: 240, display: 'flex', flexDirection: 'column', gap: 8 }}><ChatConfirm liffId={liffId} oa={oa} code={order.code} label="ส่งยืนยันการจองเข้าแชท" /></div>
         {err && <div className="err" style={{ maxWidth: 300 }}>{err}</div>}
         <div className="cap" style={{ maxWidth: 260 }}>ส่งแล้วจะได้การ์ดสถานะการจองในแชท · ส่งรหัส {order.code} เมื่อไหร่ก็เช็กสถานะได้</div>
         <a className="btn ghost" href={`/me/b/${order.code}`} style={{ minWidth: 220 }}>ดูการจองของฉัน</a>
@@ -101,11 +138,11 @@ export default function PayBox({ order, qr, account, shop, liffId, oa }: { order
     <main className="app">
       <TopBar title="ชำระเงิน" step={order.code} onBack={() => router.push('/me')} />
       <div className="body" style={{ alignItems: 'stretch' }}>
-        {order.status === 'holding' && !expired && (liffId || oa) && (
+        {order.status === 'holding' && !expired && (
           <div className="card on" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
             <span className="t"><b style={{ fontSize: 16 }}>ยืนยันการจองผ่านแชท</b>
               <small>ส่งรหัส {order.code} เข้าแชทร้าน แล้วรับการ์ดการจองพร้อม QR พร้อมเพย์ เก็บไว้โอนทีหลังได้ · ส่งรหัสเมื่อไหร่ก็เช็กสถานะได้</small></span>
-            <button className="btn" onClick={async () => { const m = await sendToChat(liffId ?? null, oa ?? null, `ยืนยันการจอง ${order.code}`); if (m) setErr(m); }}>ยืนยันการจองผ่านแชท</button>
+            <ChatConfirm liffId={liffId} oa={oa} code={order.code} label="ยืนยันการจองผ่านแชท" />
             {err && <div className="err">{err}</div>}
           </div>
         )}

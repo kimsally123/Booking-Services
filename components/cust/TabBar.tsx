@@ -15,7 +15,7 @@ export default function TabBar() {
   return (
     <nav className="tabbar cust"><div className="in">
       {TABS.map((t) => (
-        <Link key={t.href} href={t.href} className={t.match(path) ? 'on' : ''}>
+        <Link prefetch={false} key={t.href} href={t.href} className={t.match(path) ? 'on' : ''}>
           <span className="ms">{t.icon}</span>{t.label}
         </Link>
       ))}

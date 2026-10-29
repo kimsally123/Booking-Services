@@ -44,7 +44,7 @@ export default async function Customer({ params }: { params: Promise<{ code: str
         </div>); })}
       <div className="grp">การจอง</div>
       {orders.map((o) => (
-        <Link key={o.code} href={`/admin/b/${o.code}`} className="row">
+        <Link prefetch={false} key={o.code} href={`/admin/b/${o.code}`} className="row">
           <span className="t"><b className="num">{o.code}</b><small>{thDate(o.d)} · {baht(o.total)}</small></span>
           <Pill s={o.status === 'pending_review' ? ['รอตรวจสลิป', '#FDF5DC', '#8A5A00'] : ORDER_ST[o.status]} />
         </Link>

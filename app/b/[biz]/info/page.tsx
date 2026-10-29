@@ -30,12 +30,12 @@ export default async function BizInfo({ params, searchParams }: { params: Promis
     <CustScreen>
       <div className="head"><Back /><b style={{ fontSize: 20, fontWeight: 800 }}>{b.name}</b></div>
       <div className="seg">
-        <Link href={`/b/${biz}/info?tab=price`} className={!rules ? 'on' : ''} replace>{b.booking_type === 'session' ? 'รอบและราคา' : b.booking_type === 'slot' ? 'ราคา' : 'ห้องและราคา'}</Link>
-        <Link href={`/b/${biz}/info?tab=rules`} className={rules ? 'on' : ''} replace>{b.booking_type === 'slot' ? 'เตรียมน้องก่อนมา' : 'กฎและเงื่อนไข'}</Link>
+        <Link prefetch={false} href={`/b/${biz}/info?tab=price`} className={!rules ? 'on' : ''} replace>{b.booking_type === 'session' ? 'รอบและราคา' : b.booking_type === 'slot' ? 'ราคา' : 'ห้องและราคา'}</Link>
+        <Link prefetch={false} href={`/b/${biz}/info?tab=rules`} className={rules ? 'on' : ''} replace>{b.booking_type === 'slot' ? 'เตรียมน้องก่อนมา' : 'กฎและเงื่อนไข'}</Link>
       </div>
 
       {!rules && b.booking_type === 'stay' && cat.units.map((u) => (
-        <Link key={u.code} href={`/b/${biz}/u/${u.code}`} className="card infocard" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4, padding: 0, overflow: 'hidden' }}>
+        <Link prefetch={false} key={u.code} href={`/b/${biz}/u/${u.code}`} className="card infocard" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4, padding: 0, overflow: 'hidden' }}>
           <Photo file={u.photos[0]?.file} label={u.name} />
           <span style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '12px 14px 14px' }}>
           <b style={{ fontSize: 15 }}>{u.name} <span className="ms go" style={{ float: 'right' }}>chevron_right</span></b>
@@ -81,7 +81,7 @@ export default async function BizInfo({ params, searchParams }: { params: Promis
           <div key={u.code} className="card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}><b>{u.name}</b><span className="cap">{u.rules}</span></div>))}
       </>}
 
-      <Link href={`/b/${biz}`} className="btn" style={{ background: L.bg, color: L.fg }}>จองเลย</Link>
+      <Link prefetch={false} href={`/b/${biz}`} className="btn" style={{ background: L.bg, color: L.fg }}>จองเลย</Link>
     </CustScreen>
   );
 }

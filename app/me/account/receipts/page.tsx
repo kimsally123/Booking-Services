@@ -23,7 +23,7 @@ export default async function Receipts() {
       {!rows.length && <Empty icon="receipt_long" title="ยังไม่มีใบเสร็จ" text="ใบเสร็จจะขึ้นที่นี่หลังร้านยืนยันว่าได้รับเงินแล้ว" />}
       <div className="list">
         {rows.map((r) => (
-          <Link key={r.code} href={`/me/account/receipts/${r.code}`} className="li">
+          <Link prefetch={false} key={r.code} href={`/me/account/receipts/${r.code}`} className="li">
             <span className="ms">receipt_long</span>
             <span className="t"><b>{baht(Number(r.amount_slip))}</b><small>{P[r.purpose] ?? ''} · {thDay(r.d)} · {r.order_code}</small></span>
             <span className="ms go">chevron_right</span>

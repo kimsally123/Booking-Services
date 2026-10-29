@@ -23,14 +23,14 @@ export default async function MyPets({ searchParams }: { searchParams: Promise<{
     <CustScreen>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div className="title">น้องของฉัน</div>
-        <Link href={`/me/pets/new${q}`} className="pbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span className="ms" style={{ fontSize: 20 }}>add</span>เพิ่มน้อง</Link>
+        <Link prefetch={false} href={`/me/pets/new${q}`} className="pbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span className="ms" style={{ fontSize: 20 }}>add</span>เพิ่มน้อง</Link>
       </div>
-      {back && <Link href={back} className="note y">กลับไปจองต่อ ›</Link>}
+      {back && <Link prefetch={false} href={back} className="note y">กลับไปจองต่อ ›</Link>}
       {!pets.length && <div className="note" style={{ textAlign: 'center' }}>ยังไม่มีน้องในบัญชี · กด &quot;เพิ่มน้อง&quot;</div>}
       {pets.map((p) => {
         const v = vaxState(p.vaccines, today);
         return (
-          <Link key={p.code} href={`/me/pets/${p.code}${q}`} className="card" style={{ padding: 16 }}>
+          <Link prefetch={false} key={p.code} href={`/me/pets/${p.code}${q}`} className="card" style={{ padding: 16 }}>
             <Photo file={p.photo} h={64} label="" />
             <span className="t"><b>{p.name}</b><small>{[p.breed, `${p.weight_kg} กก.`].filter(Boolean).join(' · ')}</small>
               <span className="pill" style={{ background: v[1], color: v[2], alignSelf: 'flex-start' }}>{v[0]}</span></span>

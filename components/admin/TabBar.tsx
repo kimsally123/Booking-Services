@@ -10,7 +10,7 @@ export default function AdminTabBar({ slips }: { slips: number }) {
   return (
     <nav className="tabbar"><div className="in">
       {T.map(([k, href, ic, l]) => (
-        <Link key={k} href={href} className={on(k) ? 'on' : ''}>
+        <Link prefetch={false} key={k} href={href} className={on(k) ? 'on' : ''}>
           <span className="ms">{ic}</span>{l}
           {k === 'slips' && slips > 0 && <span className="badge">{slips}</span>}
         </Link>

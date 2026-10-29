@@ -4,7 +4,7 @@ import Link from 'next/link';
 export default function Head({ cap, title, back }: { cap?: string; title: string; back?: string }) {
   if (back) return (
     <div className="head">
-      <Link href={back} className="back"><span className="ms">arrow_back</span></Link>
+      <Link prefetch={false} href={back} className="back"><span className="ms">arrow_back</span></Link>
       <div className="t">{cap && <span className="cap">{cap}</span>}<b>{title}</b></div>
     </div>
   );

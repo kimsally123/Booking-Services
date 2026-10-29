@@ -34,7 +34,7 @@ export default async function Slips() {
           const i = r.items[0]; const L = bizLook(i.biz, i.color, i.type);
           const bad = r.amount_slip !== null && Number(r.amount_slip) !== Number(r.amount_due);
           return (
-            <Link key={r.code} href={`/admin/slips/${r.code}`} className="row" style={{ alignItems: 'flex-start' }}>
+            <Link prefetch={false} key={r.code} href={`/admin/slips/${r.code}`} className="row" style={{ alignItems: 'flex-start' }}>
               <span className="photo" style={{ width: 56, height: 72, flex: 'none' }}>{r.url ? <img src={r.url} alt="" /> : null}</span>
               <span className="t">
                 <span style={{ display: 'flex', gap: 4 }}>

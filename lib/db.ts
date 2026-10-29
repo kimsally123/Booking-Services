@@ -18,9 +18,9 @@ function make() {
   return postgres(url, {
     prepare: false,
     // session mode จำกัดจำนวน connection ทั้งโปรเจกต์ → ใช้น้อย ๆ ต่อ instance และปิดเร็วเมื่อว่าง
-    max: 2,
+    max: 1,          // 1 ต่อ instance (หลาย instance บน Vercel รวมกันต้องไม่เกินที่ pooler รับได้)
     // serverless: ปิด connection ที่ว่างเร็ว ๆ และไม่ใช้ตัวเก่านานเกิน กันค้างกับ socket ที่ pooler ตัดไปแล้ว
-    idle_timeout: 5,
+    idle_timeout: 3,
     max_lifetime: 60,
     connect_timeout: 10,
     connection: { TimeZone: 'Asia/Bangkok' },

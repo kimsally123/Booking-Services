@@ -53,11 +53,11 @@ export default async function Biz({ params, searchParams }: { params: Promise<{ 
       {isManager(s) && (
         <div className="seg">
           {SET[b.booking_type].map(([l, k]) => (
-            <Link key={k} href={`/admin/settings/${k === 'units' ? (kind ?? 'rooms') : k}?biz=${code}`} style={{ gap: 6 }}><span className="ms" style={{ fontSize: 18 }}>{ICON[k]}</span>{l}</Link>
+            <Link prefetch={false} key={k} href={`/admin/settings/${k === 'units' ? (kind ?? 'rooms') : k}?biz=${code}`} style={{ gap: 6 }}><span className="ms" style={{ fontSize: 18 }}>{ICON[k]}</span>{l}</Link>
           ))}
         </div>
       )}
-      {b.booking_type === 'stay' && <Link href={grid ? `?` : `?grid=1`} className="btnw line" style={{ height: 44 }}><span className="ms">calendar_month</span>{grid ? 'ซ่อนตาราง' : `ดูตาราง${people ? 'บ้าน' : 'ห้อง'} 7 วัน`}</Link>}
+      {b.booking_type === 'stay' && <Link prefetch={false} href={grid ? `?` : `?grid=1`} className="btnw line" style={{ height: 44 }}><span className="ms">calendar_month</span>{grid ? 'ซ่อนตาราง' : `ดูตาราง${people ? 'บ้าน' : 'ห้อง'} 7 วัน`}</Link>}
       {grid && (
         <div style={{ display: 'grid', gridTemplateColumns: `80px repeat(7, 1fr)`, gap: 3, fontSize: 12 }}>
           <span />{days.map((d) => <b key={d} style={{ textAlign: 'center' }}>{dowShort(d)}<br />{Number(d.slice(8))}</b>)}
@@ -82,7 +82,7 @@ export default async function Biz({ params, searchParams }: { params: Promise<{ 
       {!rows.length && <Empty icon="event" title="ยังไม่มีการจองที่ยืนยันแล้ว" text="การจองที่รอตรวจสลิปอยู่ในแท็บสลิป · ผ่านแล้วจะย้ายมาที่นี่" />}
       <div>
         {rows.map((r) => { const a = nextAction(r); return (
-          <Link key={r.code + r.phase} href={`/admin/b/${r.order_code}`} className="row">
+          <Link prefetch={false} key={r.code + r.phase} href={`/admin/b/${r.order_code}`} className="row">
             <span className="tm num">{r.phase === 'during' ? '' : r.time}</span>
             <span className="t"><b>{r.title}</b><small>{r.customer}{r.phase === 'end' ? ' · เช็กเอาต์' : r.phase === 'during' ? ' · พักอยู่' : ''}{r.order_status !== 'paid' ? ' · รอสลิป' : ''}</small></span>
             {a && <ActBtn code={r.code} action={a[0]} label={a[1]} />}

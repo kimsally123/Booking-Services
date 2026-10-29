@@ -8,7 +8,7 @@ export default function Empty({ icon, title, text, tone = 'gray', action }:
       <span className={'empty-ic ' + tone}><span className="ms">{icon}</span></span>
       <b>{title}</b>
       <p>{text}</p>
-      {action && <Link href={action.href} className="empty-btn">{action.label}</Link>}
+      {action && <Link prefetch={false} href={action.href} className="empty-btn">{action.label}</Link>}
     </div>
   );
 }

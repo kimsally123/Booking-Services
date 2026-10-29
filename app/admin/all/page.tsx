@@ -32,13 +32,13 @@ export default async function All({ searchParams }: { searchParams: Promise<{ f?
     <>
       <Head back="/admin/menu" cap={`${list.length} รายการ`} title="การจองทั้งหมด" />
       <div className="seg">
-        <Link href="?" className={!f ? 'on' : ''}>ทั้งหมด</Link>
-        {biz.map((b) => <Link key={b.code} href={`?f=${b.code}`} className={f === b.code ? 'on' : ''}>{b.name}</Link>)}
+        <Link prefetch={false} href="?" className={!f ? 'on' : ''}>ทั้งหมด</Link>
+        {biz.map((b) => <Link prefetch={false} key={b.code} href={`?f=${b.code}`} className={f === b.code ? 'on' : ''}>{b.name}</Link>)}
       </div>
       <form><input className="input" name="q" defaultValue={q} placeholder="ค้นหา ชื่อ · เบอร์ · รหัสจอง" />{f && <input type="hidden" name="f" value={f} />}</form>
       <div>
         {list.map((o) => { const i = o.items[0]; const L = look(i.biz); return (
-          <Link key={o.code} href={`/admin/b/${o.code}`} className="row" style={{ alignItems: 'flex-start' }}>
+          <Link prefetch={false} key={o.code} href={`/admin/b/${o.code}`} className="row" style={{ alignItems: 'flex-start' }}>
             <span className="t">
               <span className="biztag" style={{ background: L.bg, color: L.fg, boxShadow: L.shadow }}>{biz.find((b) => b.code === i.biz)?.name}</span>
               <b>{o.customer} · {i.item}{i.pets ? ` · ${i.pets}` : ''} {i.s !== i.e ? thRange(i.s, i.e) : thDate(i.s)}{o.items.length > 1 ? ` +${o.items.length - 1}` : ''}</b>
