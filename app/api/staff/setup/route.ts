@@ -20,8 +20,16 @@ export async function POST(req: NextRequest) {
     const u = await verifyIdToken(b.idToken);
     const code = await sql.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtext('owner_setup'))`;
-      const [has] = await tx`select code from staff where role = 'owner' and invite_status = 'active' and line_user_id is not null limit 1`;
-      if (has) throw new Error('has_owner');
+      // บัญชีนี้เป็นเจ้าของอยู่แล้ว → เข้าหลังบ้านเลย
+      const [me] = await tx`select code from staff where line_user_id = ${u.sub} and role = 'owner' and invite_status = 'active'`;
+      if (me) return me.code as string;
+      // มีเจ้าของคนอื่นผูกไว้ (เช่นบัญชีทดลอง/คนละ Provider) · คนที่มี SETUP_KEY = ผู้ดูแล Vercel → ย้ายเจ้าของมาที่บัญชีนี้
+      const [has] = await tx`select code from staff where role = 'owner' and invite_status = 'active' and line_user_id is not null order by code limit 1`;
+      if (has) {
+        await tx`update staff set line_user_id = null where line_user_id = ${u.sub} and code <> ${has.code}`;
+        await tx`update staff set line_user_id = ${u.sub}, display_name = coalesce(nullif(${u.name}, ''), display_name) where code = ${has.code}`;
+        return has.code as string;
+      }
       const [dup] = await tx`select code from staff where line_user_id = ${u.sub}`;
       if (dup) { await tx`update staff set role = 'owner', invite_status = 'active', businesses = array['all']::text[] where code = ${dup.code}`; return dup.code as string; }
       const [row] = await tx`select code from staff where role = 'owner' order by code limit 1`;
