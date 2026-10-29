@@ -99,6 +99,13 @@ export default function PayBox({ order, qr, account, shop, liffId, oa }: { order
     <main className="app">
       <TopBar title="ชำระเงิน" step={order.code} onBack={() => router.push('/me')} />
       <div className="body" style={{ alignItems: 'stretch' }}>
+        {order.status === 'holding' && !expired && (liffId || oa) && (
+          <div className="card on" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+            <span className="t"><b style={{ fontSize: 16 }}>ยืนยันการจองผ่านแชท</b>
+              <small>ส่งรหัส {order.code} เข้าแชทร้าน แล้วรับการ์ดการจองพร้อม QR พร้อมเพย์ เก็บไว้โอนทีหลังได้ · ส่งรหัสเมื่อไหร่ก็เช็กสถานะได้</small></span>
+            <button className="btn" onClick={() => sendToChat(liffId ?? null, oa ?? null, `ยืนยันการจอง ${order.code}`)}>ยืนยันการจองผ่านแชท</button>
+          </div>
+        )}
         {bal && <div className="warn"><span className="ms">info</span>มัดจำผ่านแล้ว · ชำระยอดคงเหลือภายใน {order.balance_due_by ? thDate(order.balance_due_by) : 'ก่อนวันเข้าพัก'}</div>}
         {paid && !bal && order.last_payment?.status === 'pending' && <div className="warn"><span className="ms">schedule</span>แนบสลิปยอดคงเหลือแล้ว รอร้านตรวจ</div>}
         {paid && !bal && <div className="card on"><span className="ms ok">check</span><span className="t"><b>ยืนยันการจองแล้ว</b><small>ร้านตรวจสลิปเรียบร้อย</small></span></div>}

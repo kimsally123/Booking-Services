@@ -14,7 +14,7 @@ export default async function MyPets({ searchParams }: { searchParams: Promise<{
   const { back } = await searchParams;
   const today = todayTH();
   const pets = await sql`
-    select p.code, p.name, p.breed, p.weight_kg, p.species,
+    select p.code, p.name, p.breed, p.weight_kg, p.species, p.photo,
       coalesce((select json_agg(json_build_object('status', v.status, 'expires_on', to_char(v.expires_on, 'YYYY-MM-DD')))
                 from pet_vaccines v where v.pet_code = p.code), '[]') as vaccines
     from pets p where p.customer_code = ${g.code} order by p.created_at, p.code`;
@@ -31,7 +31,7 @@ export default async function MyPets({ searchParams }: { searchParams: Promise<{
         const v = vaxState(p.vaccines, today);
         return (
           <Link key={p.code} href={`/me/pets/${p.code}${q}`} className="card" style={{ padding: 16 }}>
-            <Photo h={64} label="" />
+            <Photo file={p.photo} h={64} label="" />
             <span className="t"><b>{p.name}</b><small>{[p.breed, `${p.weight_kg} กก.`].filter(Boolean).join(' · ')}</small>
               <span className="pill" style={{ background: v[1], color: v[2], alignSelf: 'flex-start' }}>{v[0]}</span></span>
             <span className="ms" style={{ color: 'var(--ink-3)' }}>chevron_right</span>

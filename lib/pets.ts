@@ -1,4 +1,5 @@
 import 'server-only';
+import { randomBytes } from 'node:crypto';
 import { sql } from './db';
 import { BookingError } from './booking';
 import { enqueue, sendDue } from './notify';
@@ -81,4 +82,17 @@ export async function reviewVaccine(s: StaffUser, id: number, action: 'approve' 
     }
   });
   for (const pid of pushIds) await sendDue(1, pid).catch(() => undefined);
+}
+
+// รูปโปรไฟล์น้อง: ย่อเหลือ 800px และตัด EXIF (เช่นตำแหน่ง GPS) ก่อนเก็บ
+export async function setPetPhoto(customer: string, pet: string, file: Buffer) {
+  const [p] = await sql`select code from pets where code = ${pet} and customer_code = ${customer}`;
+  if (!p) throw new BookingError('not_found', 'ไม่พบน้อง');
+  if (file.length > 8 * 1024 * 1024) throw new BookingError('too_big', 'รูปใหญ่เกิน 8 MB');
+  if (!imageType(file)) throw new BookingError('not_image', 'แนบได้เฉพาะรูป JPG PNG หรือ WEBP');
+  const sharp = (await import('sharp')).default;
+  const out = await sharp(file).rotate().resize(800, 800, { fit: 'cover' }).jpeg({ quality: 82 }).toBuffer();
+  const path = await putFile('photos', `pet-${pet}-${randomBytes(6).toString('hex')}.jpg`, out, 'image/jpeg');
+  await sql`update pets set photo = ${path} where code = ${pet}`;
+  return path;
 }

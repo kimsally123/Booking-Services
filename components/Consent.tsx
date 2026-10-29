@@ -13,8 +13,12 @@ export default function Consent({ shop }: { shop: string }) {
     setBusy(true); setErr('');
     const r = await fetch('/api/me/consent', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ accept: true, phone }) });
     setBusy(false);
-    if (!r.ok) return setErr((await r.json()).message);
-    router.refresh();
+    if (!r.ok) {
+      const j = await r.json().catch(() => null);
+      return setErr(j?.message || `บันทึกไม่สำเร็จ (${r.status}) ลองใหม่อีกครั้ง`);
+    }
+    // โหลดหน้าใหม่ทั้งหน้า (refresh อย่างเดียวบางเครื่องใน LINE ไม่เปลี่ยนหน้า)
+    location.reload();
   };
   return (
     <main className="app">
@@ -25,7 +29,7 @@ export default function Consent({ shop }: { shop: string }) {
         <ul className="sub" style={{ paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
           <li>ชื่อและรหัสผู้ใช้ LINE ใช้ยืนยันตัวตนและส่งข้อความยืนยัน/เตือนการจอง</li>
           <li>เบอร์โทร (ถ้ากรอก) ใช้ติดต่อเรื่องการจอง</li>
-          <li>ข้อมูลน้อง: ชื่อ สายพันธุ์ น้ำหนัก ข้อควรระวัง และรูปสมุดวัคซีน</li>
+          <li>ข้อมูลน้อง: ชื่อ สายพันธุ์ น้ำหนัก ข้อควรระวัง รูปน้อง (ถ้าใส่) และรูปสมุดวัคซีน</li>
           <li>อีเมล (ถ้ากรอก) ใช้ส่งยืนยันและเตือนการจองเมื่อ LINE ส่งไม่ได้</li>
           <li>จำนวนผู้เข้าพัก (Villa) และคำขอเพิ่มเติมตอนจอง</li>
           <li>ประวัติการจอง การชำระเงิน เครดิต และรูปสลิปโอนเงิน · รูปสลิปอาจส่งให้ Google Cloud Vision อ่านยอดและผู้รับเพื่อช่วยร้านตรวจ (ไม่ใช้เพื่อการอื่น)</li>

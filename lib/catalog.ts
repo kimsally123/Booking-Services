@@ -35,7 +35,9 @@ export async function getBizCatalog(code: string): Promise<BizCatalog | null> {
                coalesce((select json_agg(json_build_object('tier_code', sp.tier_code, 'price', sp.price, 'duration_min', sp.duration_min)
                                   order by t.min_kg)
                          from service_prices sp join weight_tiers t on t.code = sp.tier_code
-                         where sp.service_code = s.code), '[]') as prices
+                         where sp.service_code = s.code), '[]') as prices,
+               coalesce((select json_agg(json_build_object('file', p.file, 'caption', p.caption, 'is_cover', p.is_cover) order by p.is_cover desc, p.sort)
+                         from unit_photos p where p.service_code = s.code), '[]') as photos
         from services s where s.business_code = ${code} and s.active order by s.kind, s.sort, s.code`,
     sql`select ps.code, ps.unit_code, ps.weekdays, to_char(ps.start_time, 'HH24:MI') as start_time,
                to_char(ps.end_time, 'HH24:MI') as end_time, ps.size_rule, ps.capacity, ps.price
@@ -69,7 +71,7 @@ export async function getBizCatalog(code: string): Promise<BizCatalog | null> {
 // น้องของลูกค้า + สถานะวัคซีน
 export async function getPets(customerCode: string): Promise<Pet[]> {
   const rows = await sql<Pet[]>`
-    select p.code, p.name, p.species, p.breed, p.weight_kg, p.note, tier_for(p.weight_kg) as tier_code,
+    select p.code, p.name, p.species, p.breed, p.weight_kg, p.note, p.photo, tier_for(p.weight_kg) as tier_code,
            (select to_char(max(v.expires_on), 'YYYY-MM-DD') from pet_vaccines v
              where v.pet_code = p.code and v.status = 'approved') as vaccine_until,
            exists (select 1 from pet_vaccines v where v.pet_code = p.code and v.status = 'pending') as vaccine_pending

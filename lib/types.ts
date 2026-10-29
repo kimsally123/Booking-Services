@@ -48,6 +48,7 @@ export interface Service {
   price: number | null;
   duration_min: number | null;
   prices: { tier_code: string; price: number; duration_min: number }[];
+  photos?: Photo[];
 }
 
 export interface Tier { code: string; label: string; min_kg: number; max_kg: number | null }
@@ -85,6 +86,7 @@ export interface Pet {
   tier_code: string | null;
   vaccine_until: string | null; // วันหมดอายุวัคซีนที่ผ่านตรวจล่าสุด
   vaccine_pending: boolean;
+  photo?: string | null;
 }
 
 export interface Catalog {

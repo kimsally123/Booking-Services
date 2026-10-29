@@ -6,7 +6,7 @@ import { vaxState } from '@/lib/vax';
 import { Photo } from '../ui';
 
 type V = { id: number; vaccine: string; expires_on: string; status: 'pending' | 'approved' | 'rejected'; reason: string | null };
-type P = { code: string; name: string; species: string; breed: string | null; weight_kg: number; tags: string[]; vaccines: V[] };
+type P = { code: string; name: string; species: string; breed: string | null; weight_kg: number; tags: string[]; vaccines: V[]; photo?: string | null };
 const VST = { pending: ['รอร้านตรวจ', 'var(--amber)'], approved: ['ผ่านแล้ว', 'var(--green)'], rejected: ['ไม่ผ่าน', 'var(--red-ink)'] } as const;
 
 export default function PetDetail({ pet, today, tags, back }: { pet: P; today: string; tags: string[]; back: string | null }) {
@@ -16,6 +16,16 @@ export default function PetDetail({ pet, today, tags, back }: { pet: P; today: s
   const [vax, setVax] = useState({ vaccine: 'รวม 5 โรค', expires_on: '' });
   const [kg, setKg] = useState(String(pet.weight_kg));
   const file = useRef<HTMLInputElement>(null);
+  const pic = useRef<HTMLInputElement>(null);
+  const [picBusy, setPicBusy] = useState(false);
+  const upPic = async (f: File) => {
+    setPicBusy(true); setErr('');
+    const fd = new FormData(); fd.append('photo', f);
+    const r = await fetch(`/api/me/pets/${pet.code}/photo`, { method: 'POST', body: fd });
+    setPicBusy(false);
+    if (!r.ok) return setErr((await r.json().catch(() => ({}))).message || 'อัปโหลดรูปไม่สำเร็จ');
+    router.refresh();
+  };
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const st = vaxState(pet.vaccines, today);
@@ -41,7 +51,12 @@ export default function PetDetail({ pet, today, tags, back }: { pet: P; today: s
     <>
       <button className="back" onClick={() => router.push(back ? `/me/pets?back=${encodeURIComponent(back)}` : '/me/pets')}><span className="ms">arrow_back</span></button>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-        <div style={{ width: 80, height: 80, borderRadius: 40, overflow: 'hidden', flex: 'none' }}><Photo h={80} label="" /></div>
+        <button onClick={() => pic.current?.click()} disabled={picBusy} aria-label="เปลี่ยนรูปน้อง"
+          style={{ position: 'relative', width: 84, height: 84, borderRadius: 42, overflow: 'hidden', flex: 'none', border: 0, padding: 0, background: 'none' }}>
+          <Photo file={pet.photo} h={84} label={picBusy ? 'กำลังอัป…' : 'ใส่รูป'} />
+          <span className="ms" style={{ position: 'absolute', right: 2, bottom: 2, width: 28, height: 28, borderRadius: 14, background: '#111', color: '#fff', fontSize: 16, display: 'grid', placeItems: 'center' }}>photo_camera</span>
+        </button>
+        <input ref={pic} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) upPic(f); e.target.value = ''; }} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <b style={{ fontSize: 26, fontWeight: 800 }}>{pet.name}</b>
           <span className="cap">{[pet.breed, `${pet.weight_kg} กก.`].filter(Boolean).join(' · ')}</span>

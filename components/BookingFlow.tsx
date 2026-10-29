@@ -286,7 +286,7 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial, credi
         const ok = vaxOk(p, serviceDate);
         return (
           <button key={p.code} className={'card' + (sel.includes(p.code) ? ' on' : '')} disabled={!ok} onClick={() => toggle(p.code, single)}>
-            <Photo h={44} label="" />
+            <Photo file={p.photo} h={44} label="" />
             <span className="t">
               <b>{p.name}</b>
               <small>{[p.breed, `${p.weight_kg} กก.`].filter(Boolean).join(' · ')}</small>
@@ -403,6 +403,7 @@ export default function BookingFlow({ cat, pets, loggedIn, today, initial, credi
         const tier = cat.tiers.find((t) => t.code === pet?.tier_code);
         return (
           <button key={s.code} className={'card' + (service === s.code ? ' on' : '')} disabled={!p} onClick={() => { setService(s.code); setSlot(null); setTime(null); }}>
+            {s.photos?.[0] && <Photo file={s.photos[0].file} h={56} />}
             <span className="t"><b>{s.name}</b><small>{[s.description, p?.duration_min ? `${p.duration_min} นาที` : ''].filter(Boolean).join(' · ')}</small></span>
             <span className="p num">{p ? baht(Number(p.price)) : '-'}<small>{s.price_mode === 'by_weight' ? tier?.label : ''}</small></span>
           </button>

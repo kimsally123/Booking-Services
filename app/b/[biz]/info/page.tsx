@@ -6,6 +6,7 @@ import { bizLook } from '@/lib/look';
 import { baht } from '@/lib/thaidate';
 import { CustScreen, requireCustomer } from '@/components/cust/Gate';
 import { Back } from '@/components/cust/AccountForms';
+import { Photo } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 const DOW = ['', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'];
@@ -34,14 +35,18 @@ export default async function BizInfo({ params, searchParams }: { params: Promis
       </div>
 
       {!rules && b.booking_type === 'stay' && cat.units.map((u) => (
-        <Link key={u.code} href={`/b/${biz}/u/${u.code}`} className="card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
+        <Link key={u.code} href={`/b/${biz}/u/${u.code}`} className="card infocard" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4, padding: 0, overflow: 'hidden' }}>
+          <Photo file={u.photos[0]?.file} label={u.name} />
+          <span style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '12px 14px 14px' }}>
           <b style={{ fontSize: 15 }}>{u.name} <span className="ms go" style={{ float: 'right' }}>chevron_right</span></b>
           {u.summary && <span className="cap">{u.summary}</span>}
           <span><b className="num">{baht(u.price)}</b> / คืน{u.weekend_price ? <> · ศ.–ส. <b className="num">{baht(u.weekend_price)}</b></> : null}</span>
           {u.pet_fee ? <span className="cap">พาน้องมาด้วย +{baht(u.pet_fee)} / ตัว / คืน</span> : null}
           {u.max_pet_kg ? <span className="cap">รับน้องไม่เกิน {u.max_pet_kg} กก.</span> : null}
+          </span>
         </Link>))}
 
+      {!rules && b.booking_type === 'session' && cat.units[0]?.photos[0] && <div className="infohero"><Photo file={cat.units[0].photos[0].file} label={b.name} /></div>}
       {!rules && b.booking_type === 'session' && cat.sessions.map((s) => (
         <div key={s.code} className="card" style={{ justifyContent: 'space-between' }}>
           <span className="t"><b>{s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}</b>
@@ -50,12 +55,15 @@ export default async function BizInfo({ params, searchParams }: { params: Promis
         </div>))}
 
       {!rules && b.booking_type === 'slot' && cat.services.filter((s) => s.kind === 'main').map((s) => (
-        <div key={s.code} className="card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+        <div key={s.code} className="card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6, ...(s.photos?.[0] ? { padding: 0, overflow: 'hidden' } : {}) }}>
+          {s.photos?.[0] && <Photo file={s.photos[0].file} label={s.name} />}
+          <span style={{ display: 'flex', flexDirection: 'column', gap: 6, ...(s.photos?.[0] ? { padding: '12px 14px 14px' } : {}) }}>
           <b style={{ fontSize: 15 }}>{s.name}</b>
           {s.description && <span className="cap">{s.description}</span>}
           {s.price_mode === 'flat'
             ? <span><b className="num">{baht(Number(s.price))}</b> · {s.duration_min} นาที</span>
             : s.prices.map((p) => <div key={p.tier_code} style={{ display: 'flex', justifyContent: 'space-between' }}><span className="cap">{tierLabel(p.tier_code)}</span><b className="num">{baht(p.price)}</b></div>)}
+          </span>
         </div>))}
       {!rules && b.booking_type === 'slot' && cat.tiers.length > 0 && (
         <div className="note">ขนาดตามน้ำหนัก: {cat.tiers.map((t) => `${t.label} ${t.min_kg}–${t.max_kg ?? ''} กก.`).join(' · ')}</div>)}

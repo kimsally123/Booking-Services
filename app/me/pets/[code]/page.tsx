@@ -13,7 +13,7 @@ export default async function PetPage({ params, searchParams }: { params: Promis
   const { code } = await params;
   const { back } = await searchParams;
   const [p] = await sql`
-    select p.code, p.name, p.species, p.breed, p.weight_kg, p.tags,
+    select p.code, p.name, p.species, p.breed, p.weight_kg, p.tags, p.photo,
       coalesce((select json_agg(json_build_object('id', v.id, 'vaccine', v.vaccine, 'expires_on', to_char(v.expires_on, 'YYYY-MM-DD'),
                                                   'status', v.status, 'reason', v.reject_reason) order by v.created_at desc)
                 from pet_vaccines v where v.pet_code = p.code), '[]') as vaccines

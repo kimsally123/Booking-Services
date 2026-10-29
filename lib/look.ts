@@ -26,6 +26,7 @@ export function bizLook(code: string, color: string | null, type: string) {
 export function photoUrl(file: string | null | undefined): string | null {
   if (!file) return null;
   if (/^https?:\/\//.test(file)) return file;
+  if (file.startsWith('/')) return file;   // ภาพในเว็บเอง เช่น /demo/xxx.jpg
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
   return base ? `${base}/storage/v1/object/public/photos/${encodeURIComponent(file)}` : `/api/photo?p=${encodeURIComponent(file)}`;
 }

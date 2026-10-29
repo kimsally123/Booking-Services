@@ -3,6 +3,8 @@ import { dbPort, sql } from '@/lib/db';
 import { getBizCatalog, getCatalog, getPets } from '@/lib/catalog';
 import { me } from '@/lib/me';
 import { liffId } from '@/lib/config';
+import { readdirSync } from 'node:fs';
+import path from 'node:path';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +43,15 @@ export async function GET(req: NextRequest) {
     steps.push(await race('pets_demo', async () => { const m = await me(); return m.code ? getPets(m.code) : null; }));
     steps.push(await race('parallel_8', () => Promise.all(Array.from({ length: 8 }, () => sql`select 1`))));
     out.steps = Object.fromEntries(steps);
+    // migration ที่ยังไม่ได้รันบนฐานข้อมูลนี้ (ถ้ามี = build ข้าม migrate · โค้ดใหม่จะพัง)
+    try {
+      const files = readdirSync(path.join(process.cwd(), 'supabase', 'migrations')).filter((f) => f.endsWith('.sql'));
+      const done = new Set((await sql`select name from schema_migrations`).map((r) => r.name as string));
+      out.migrations_missing = files.filter((f) => !done.has(f));
+    } catch (e) { out.migrations_missing = `ตรวจไม่ได้: ${(e as Error).message}`; }
+    out.demo_mode = process.env.DEMO_MODE === '1' && !process.env.NEXT_PUBLIC_LIFF_ID;
+    out.env = Object.fromEntries(['NEXT_PUBLIC_LIFF_ID', 'LINE_LOGIN_CHANNEL_ID', 'LINE_CHANNEL_ACCESS_TOKEN', 'LINE_CHANNEL_SECRET', 'SESSION_SECRET', 'CRON_SECRET', 'NEXT_PUBLIC_SUPABASE_URL']
+      .map((k) => [k, !!process.env[k]]));
   }
   out.total_ms = Date.now() - t0;
   return Response.json(out, { headers: { 'cache-control': 'no-store' } });

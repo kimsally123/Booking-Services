@@ -322,3 +322,8 @@ html, body { overflow-x: hidden; max-width: 100%; }
 .hcard{flex:0 0 72%;max-width:280px;scroll-snap-align:start;border:1px solid var(--line,#E4E4E0);border-radius:18px;overflow:hidden;background:#fff;display:flex;flex-direction:column;color:inherit;text-decoration:none}
 .hcard .photo{width:100%;aspect-ratio:4/3;height:auto;border-radius:0}
 .hcard .b{padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+
+/* หน้าราคา: รูปปกการ์ด */
+.infocard .photo{width:100%;aspect-ratio:16/9;height:auto;border-radius:0}
+.card > .photo{width:100%;aspect-ratio:16/9;height:auto;border-radius:0}
+.infohero .photo{width:100%;aspect-ratio:16/9;height:auto;border-radius:16px}

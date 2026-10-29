@@ -22,6 +22,11 @@ export async function amountDue(code: string): Promise<number> {
   if (o.status === 'paid') return Number(o.balance_due);
   return 0;
 }
+// ร้านตั้งเลขพร้อมเพย์แล้วหรือยัง (ยังไม่ตั้ง = ไม่ใส่รูป QR ในการ์ด กันกรอบว่าง)
+export async function hasPromptPay(): Promise<boolean> {
+  const [r] = await sql`select value from settings where key = 'promptpay_id'`;
+  return !!String(r?.value ?? '').replace(/\D/g, '');
+}
 export async function qrPng(code: string): Promise<Buffer | null> {
   const [r] = await sql`select value from settings where key = 'promptpay_id'`;
   const amt = await amountDue(code);
